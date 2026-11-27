@@ -4,13 +4,16 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 
 ## 当前状态
 
-当前版本 0.1.0 提供 Unity Editor 内同步、只读的 C# 查询 API：
+当前版本 0.1.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的 C# 查询 API：
 
 - `EditorLensQuery.EnumerateWindows()`：枚举已加载的 `EditorWindow`，包含未聚焦和未展示实例。
 - `EditorLensQuery.CaptureTree(instanceId)`：采集窗口已有的 UI Toolkit 物理元素树，包含基础状态、文本与常用标量值。
 - 查询结果为脱离实时对象的历史快照，带有状态、诊断及截断信息；必须从 Unity 主线程调用。
+- `Window/Analysis/Editor Lens`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持按标题、类型全名或实例 ID 搜索窗口。
 
-UI Toolkit 调试窗口、菜单入口、JSON 导出和外部调用桥接尚未实现。完整调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
+打开调试窗口时枚举一次已加载窗口，选择目标时采集一次控件树；之后通过“刷新窗口列表”和“刷新控件树”手动更新。刷新列表会保留仍存在的目标及其树快照，不自动重新采集树；列表搜索也不触发查询。节点详情中的文本、值、布局和状态均来自本次历史快照。
+
+树展示保留真实层级，标记 IMGUI 边界、截断和数据读取失败；窗口尚未创建 UI Toolkit 根时显示诊断，不创建目标根。控件树搜索、定时刷新、JSON 导出和外部调用桥接尚未实现。完整操作说明、调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
 
 IMGUI 内部控件解析、Odin 属性树、运行时游戏 UI、控件操作及截图不属于首版功能范围。
 

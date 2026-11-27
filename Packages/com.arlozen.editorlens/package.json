@@ -2,7 +2,7 @@
   "name": "com.arlozen.editorlens",
   "version": "0.1.0",
   "displayName": "Editor Lens",
-  "description": "独立的 Unity Editor 只读检查工具，提供已加载窗口枚举、UI Toolkit 元素树快照与常用文本及标量值查询 API。",
+  "description": "独立的 Unity Editor 只读检查工具，提供 UI Toolkit 调试窗口、窗口搜索、控件树及节点详情展示，以及已加载窗口与元素树快照查询 API。",
   "unity": "2022.3",
   "author": {
     "name": "arlozen"
