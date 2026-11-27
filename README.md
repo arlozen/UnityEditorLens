@@ -63,6 +63,8 @@ UnityEditorLens/
 - [unity-editor](.agents/skills/unity-editor/SKILL.md)：Editor、UI Toolkit 和查询能力开发。
 - [unity-validation](.agents/skills/unity-validation/SKILL.md)：包结构、导入、编译和 EditMode 测试。
 
+需要查看 Unity 托管程序集实现时，可按需使用 ILSpy 命令行工具；命令与路径选择见 [unity-editor 技能的反编译查询说明](.agents/skills/unity-editor/SKILL.md#反编译查询)。该工具仅用于开发辅助，不是插件依赖。
+
 默认通过 API、日志和后台检查验证。前台验证须说明必要性和预计占用时间，并取得用户明确授权；未验证的阶段应如实记录。
 
 开发宿主显式使用 Test Framework 1.1.33，并通过 `testables` 启用包内 `EditorLens.Tests`。生产包无测试框架依赖。工程已在 Unity 中打开时，使用同版本独立临时宿主进行后台导入、编译和 EditMode 验证，不对同一工程启动第二实例。包内 README 提供测试命令和结果检查要求。

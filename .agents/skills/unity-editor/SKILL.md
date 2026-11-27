@@ -13,6 +13,22 @@ description: 开发或审查 EditorLens 的 Unity Editor C#、UI Toolkit 窗口�
 - 默认一个类型一个文件；不为尚未实现的需求增加 Runtime 程序集、空接口或通用扩展框架。
 - 采用当前 Unity 基线可用的公开 API；确需内部 API 时隔离版本差异并说明限制。
 
+## 反编译查询
+
+需要确认 Unity 托管程序集的实现细节时，通过 PowerShell 7 按需使用 `ilspycmd`，不要求每次开发都反编译。
+
+先确认工具可用；根据 `ProjectSettings/ProjectVersion.txt` 对应的 Unity 安装位置，将 `$assemblyPath` 设为目标托管程序集的实际路径，将 `$referenceDirectory` 设为其依赖程序集所在目录。查询 `UnityEditor.EditorWindow` 时选择包含该类型的 `UnityEditor.CoreModule.dll`。
+
+```powershell
+ilspycmd --version
+ilspycmd -l c "$assemblyPath"
+ilspycmd -t UnityEditor.EditorWindow -r "$referenceDirectory" "$assemblyPath"
+```
+
+默认将结果输出到标准输出；确需使用 `-o` 导出时，选择仓库外临时目录，避免 Unity 导入反编译源码。工具不可用或依赖解析失败时报告实际诊断，不将失败结果视为实现证据。
+
+反编译结果仅辅助理解实现，不能替代公开 API 兼容性检查和 Unity 编译验证，也不作为引入内部 API 或新增包依赖的依据。
+
 ## 查询与界面
 
 - 窗口枚举、元素读取和快照采集由查询服务负责，EditorWindow 负责展示和交互；API 不依赖调试窗口是否打开。
