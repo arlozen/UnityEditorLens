@@ -1,0 +1,11 @@
+{
+  "name": "com.arlozen.editorlens",
+  "version": "0.1.0",
+  "displayName": "Editor Lens",
+  "description": "独立的 Unity Editor 检查工具，目标为窗口查询与 UI Toolkit 控件树检查。当前处于包骨架初始化阶段。",
+  "unity": "2022.3",
+  "author": {
+    "name": "arlozen"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,32 @@
+# Unity 生成目录
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Bb]uild/
+/[Bb]uilds/
+/[Tt]est[Rr]esults/
+/[Aa]rtifacts/
+
+# IDE 用户配置与 Unity 自动生成的工程文件
+/.vs/
+/.idea/
+*.csproj
+*.sln
+*.slnx
+*.pidb
+*.suo
+*.user
+*.userprefs
+*.opendb
+*.VC.db
+
+# 崩溃报告与导出产物
+/sysinfo.txt
+/*.stacktrace
+/*.unitypackage
+
+# 操作系统缓存
+.DS_Store
+Thumbs.db
