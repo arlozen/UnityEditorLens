@@ -1,1 +1,4 @@
 * text=auto eol=lf
+
+# Unity 生成的 .meta 空字段保留其原始尾空格。
+*.meta whitespace=-blank-at-eol

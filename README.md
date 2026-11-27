@@ -4,14 +4,13 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 
 ## 当前状态
 
-当前完成项目规范、开发技能和 UPM 包骨架；尚未实现窗口遍历、查询 API 或调试窗口。
+当前版本 0.1.0 提供 Unity Editor 内同步、只读的 C# 查询 API：
 
-首版功能目标：
+- `EditorLensQuery.EnumerateWindows()`：枚举已加载的 `EditorWindow`，包含未聚焦和未展示实例。
+- `EditorLensQuery.CaptureTree(instanceId)`：采集窗口已有的 UI Toolkit 物理元素树，包含基础状态、文本与常用标量值。
+- 查询结果为脱离实时对象的历史快照，带有状态、诊断及截断信息；必须从 Unity 主线程调用。
 
-- 枚举当前已加载的 EditorWindow 实例并查询窗口信息。
-- 采集指定窗口当前已创建的 UI Toolkit 元素树。
-- 提供独立于调试窗口的只读查询 API。
-- 使用 UI Toolkit 调试窗口展示窗口列表、控件树和详情。
+UI Toolkit 调试窗口、菜单入口、JSON 导出和外部调用桥接尚未实现。完整调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
 
 IMGUI 内部控件解析、Odin 属性树、运行时游戏 UI、控件操作及截图不属于首版功能范围。
 
@@ -25,6 +24,7 @@ UnityEditorLens/
 ├─ Packages/
 │  ├─ com.arlozen.editorlens/       可独立分发的 UPM 包
 │  │  ├─ Editor/                   仅限 Editor 的程序集
+│  │  ├─ Tests/Editor/             可选的 EditMode 行为测试
 │  │  ├─ package.json
 │  │  ├─ README.md
 │  │  └─ AGENTS.md
@@ -48,7 +48,7 @@ UnityEditorLens/
 2. 放到目标工程的 `Packages/com.arlozen.editorlens`，保留目录内已有的 .meta。
 3. 等待 Unity 识别和导入嵌入包，检查包解析结果及 Console。
 
-完整安装说明见[包内 README](Packages/com.arlozen.editorlens/README.md)。当前骨架没有可使用的调试窗口或功能 API。
+完整安装说明见[包内 README](Packages/com.arlozen.editorlens/README.md)。查询 API 不依赖调试窗口或本开发宿主资源。
 
 ## 开发与验证
 
@@ -61,5 +61,7 @@ UnityEditorLens/
 - [unity-validation](.agents/skills/unity-validation/SKILL.md)：包结构、导入、编译和 EditMode 测试。
 
 默认通过 API、日志和后台检查验证。前台验证须说明必要性和预计占用时间，并取得用户明确授权；未验证的阶段应如实记录。
+
+开发宿主显式使用 Test Framework 1.1.33，并通过 `testables` 启用包内 `EditorLens.Tests`。生产包无测试框架依赖。工程已在 Unity 中打开时，使用同版本独立临时宿主进行后台导入、编译和 EditMode 验证，不对同一工程启动第二实例。包内 README 提供测试命令和结果检查要求。
 
 本仓库跟踪工程资源、配置、包和文档，忽略 Unity 缓存、日志、用户设置及自动生成的工程文件。
