@@ -6,7 +6,7 @@ using UnityEngine.UIElements;
 
 namespace EditorLens
 {
-    /// <summary>Unity Editor 主线程上的同步只读查询；无需打开调试窗口。</summary>
+    /// <summary>Unity Editor 主线程上的只读快照查询与显式 IMGUI 采集会话；无需打开调试窗口。</summary>
     public static class EditorLensQuery
     {
         public static WindowListSnapshot EnumerateWindows()
@@ -128,6 +128,20 @@ namespace EditorLens
         public static OdinTreeSnapshot CaptureOdinTree(UnityEditor.Editor editor, TreeCaptureOptions options = null)
         {
             return OdinTreeCapture.CaptureEditor(editor, options);
+        }
+
+        /// <summary>等待目标窗口一次自然 IMGUI 绘制；不会聚焦、重绘目标或直接执行 OnGUI。</summary>
+        public static IMGUITreeCaptureSession BeginIMGUITreeCapture(int windowInstanceId,
+            TreeCaptureOptions options = null, double timeoutSeconds = 2)
+        {
+            return IMGUITreeCaptureSession.Begin(windowInstanceId, options, timeoutSeconds);
+        }
+
+        /// <summary>定位 Editor 已有 Inspector，采集整个宿主的记录，不保证属于此 Editor 的专属范围。</summary>
+        public static IMGUITreeCaptureSession BeginIMGUITreeCapture(UnityEditor.Editor editor,
+            TreeCaptureOptions options = null, double timeoutSeconds = 2)
+        {
+            return IMGUITreeCaptureSession.Begin(editor, options, timeoutSeconds);
         }
 
         internal static WindowSnapshot ReadWindow(EditorWindow window, EditorWindow focusedWindow)

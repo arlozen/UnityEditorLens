@@ -1,6 +1,6 @@
 namespace EditorLens
 {
-    /// <summary>同步查询的整体结果；截断和局部失败也会保留已采集的数据。</summary>
+    /// <summary>查询或采集会话的整体结果；截断和局部失败也会保留已采集的数据。</summary>
     public enum QueryStatus
     {
         Success,
@@ -16,6 +16,11 @@ namespace EditorLens
         OdinUnavailable,
         UnsupportedOdinVersion,
         UnsupportedTarget,
-        EditorUnavailable
+        EditorUnavailable,
+        Pending,
+        Busy,
+        TimedOut,
+        Cancelled,
+        CaptureInterrupted
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -42,7 +41,7 @@ namespace EditorLens
                 }
                 else
                 {
-                    QueryStatus inspectorStatus = ReadInspectorEditors(target, out UnityEditor.Editor[] editors,
+                    QueryStatus inspectorStatus = ExistingInspectorAccessor.ReadEditors(target, out UnityEditor.Editor[] editors,
                         out diagnostic);
                     if (inspectorStatus != QueryStatus.Success)
                         return Fail(result, inspectorStatus, diagnostic);
@@ -112,54 +111,6 @@ namespace EditorLens
                 return false;
             }
             return true;
-        }
-
-        private static QueryStatus ReadInspectorEditors(EditorWindow window,
-            out UnityEditor.Editor[] editors, out string diagnostic)
-        {
-            editors = null;
-            Type inspectorType = typeof(UnityEditor.Editor).Assembly.GetType("UnityEditor.InspectorWindow");
-            if (inspectorType == null)
-            {
-                diagnostic = "当前 Unity 缺少受支持的 InspectorWindow 类型。";
-                return QueryStatus.UnsupportedEditorVersion;
-            }
-            if (!inspectorType.IsInstanceOfType(window))
-            {
-                diagnostic = "窗口既不是 OdinEditorWindow，也不是受支持的 Unity Inspector。";
-                return QueryStatus.UnsupportedTarget;
-            }
-
-            Type propertyEditorType = typeof(UnityEditor.Editor).Assembly.GetType("UnityEditor.PropertyEditor");
-            if (propertyEditorType == null || !propertyEditorType.IsAssignableFrom(inspectorType))
-            {
-                diagnostic = "当前 Unity 的 InspectorWindow 与 PropertyEditor 继承结构不兼容。";
-                return QueryStatus.UnsupportedEditorVersion;
-            }
-            FieldInfo trackerField = propertyEditorType.GetField("m_Tracker",
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
-            if (trackerField == null || trackerField.IsStatic || trackerField.DeclaringType != propertyEditorType
-                || trackerField.FieldType != typeof(ActiveEditorTracker))
-            {
-                diagnostic = "当前 Unity 的 InspectorWindow 已有 Tracker 字段结构不兼容。";
-                return QueryStatus.UnsupportedEditorVersion;
-            }
-
-            // 不读取 InspectorWindow.tracker getter；该入口会创建 Tracker 并触发重建。
-            var tracker = (ActiveEditorTracker)trackerField.GetValue(window);
-            if (tracker == null)
-            {
-                diagnostic = "Inspector 尚未创建 Tracker；查询不会创建 Tracker 或重建编辑器。";
-                return QueryStatus.RootUnavailable;
-            }
-            editors = tracker.activeEditors;
-            if (editors == null)
-            {
-                diagnostic = "Inspector 已有 Tracker 的编辑器列表不可用。";
-                return QueryStatus.RootUnavailable;
-            }
-            diagnostic = null;
-            return QueryStatus.Success;
         }
 
         private static void ReadOdinWindow(OdinReflectionAdapter adapter, EditorWindow window,

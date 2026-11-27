@@ -1,6 +1,6 @@
 # Editor Lens
 
-Editor Lens 0.2.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的窗口枚举、UI Toolkit 物理树和可选 Odin 属性树缓存查询 API。命名空间为 `EditorLens`，程序集为仅限 Editor 的 `EditorLens.Editor`，生产包无第三方编译引用或包依赖。
+Editor Lens 0.3.0 提供 UI Toolkit 调试窗口、同步只读的窗口／UI Toolkit／可选 Odin 属性缓存查询，以及显式 IMGUI 绘制层级采集会话。命名空间为 `EditorLens`，程序集为仅限 Editor 的 `EditorLens.Editor`，生产包无第三方编译引用或包依赖。
 
 包声明 Unity 基线为 2022.3，开发与验证基线为 2022.3.62f3；不据此承诺其他版本已经验证。控件树搜索、定时刷新、JSON 导出和编辑器外部接入尚未实现。
 
@@ -78,7 +78,53 @@ foreach (WindowSnapshot window in windows.Windows)
 
 节点数默认上限为 10,000，深度默认上限为 128，可通过选项调整。`MaxNodes` 必须大于 0，`MaxDepth` 必须大于或等于 0；仅实际省略节点时标记截断。`ChildIds` 只引用本次实际采集的节点，省略的直接子节点通过 `HasUncapturedChildren` 标记。
 
-树只覆盖窗口已有根下的内容，不包含停靠栏等宿主界面，不创建虚拟列表未实例化的行。`IMGUIContainer` 标记内部 IMGUI 无法解析，仍遍历其已有的真实 UI Toolkit 子元素，不执行 `onGUIHandler`。Odin 属性缓存通过下述独立接口查询；不解析任意 IMGUI 物理控件或运行时游戏 UI。
+树只覆盖窗口已有根下的内容，不包含停靠栏等宿主界面，不创建虚拟列表未实例化的行。`IMGUIContainer` 标记内部 IMGUI 无法通过 UI Toolkit 物理树解析，仍遍历其已有的真实 UI Toolkit 子元素，不执行 `onGUIHandler`。IMGUI 绘制记录和 Odin 属性缓存通过独立接口查询；不解析运行时游戏 UI。
+
+## IMGUI 绘制层级快照 API
+
+`BeginIMGUITreeCapture(int windowInstanceId, TreeCaptureOptions options = null, double timeoutSeconds = 2)` 返回 `IMGUITreeCaptureSession`。它临时启用 Unity 的 IMGUI 调试记录器，等待已有宿主的一次自然绘制；`Snapshot.Status` 初始为 `Pending`，完成后 `IsCompleted` 为 true，`Snapshot` 被替换成结果快照。不要在等待期间阻塞 Editor 主线程，也不要在刚发起请求后立即用 `using` 结束会话。
+
+以下示例中的方法可放入调用方自己的 Editor 类，在主线程调用：
+
+```csharp
+public static void CaptureIMGUI(int windowInstanceId)
+{
+    var session = EditorLens.EditorLensQuery.BeginIMGUITreeCapture(windowInstanceId,
+        new EditorLens.TreeCaptureOptions { MaxNodes = 10000, MaxDepth = 128 },
+        timeoutSeconds: 2);
+
+    void ReadResult()
+    {
+        if (!session.IsCompleted)
+            return;
+        UnityEditor.EditorApplication.update -= ReadResult;
+        EditorLens.IMGUITreeSnapshot tree = session.Snapshot;
+        session.Dispose();
+        foreach (string diagnostic in tree.Diagnostics)
+            UnityEngine.Debug.Log(diagnostic);
+        foreach (EditorLens.IMGUIInstructionSnapshot node in tree.Nodes)
+            UnityEngine.Debug.Log($"{node.NodeId} parent={node.ParentId} "
+                + $"kind={node.Kind} text={node.Text} rect={node.Rect}");
+    }
+
+    if (session.IsCompleted)
+        ReadResult();
+    else
+        UnityEditor.EditorApplication.update += ReadResult;
+}
+```
+
+已有 `UnityEditor.Editor` 可传给同名重载。该入口仅读取已有 Inspector 的 Tracker 来定位宿主，不创建 Editor 或 Inspector；找不到宿主时返回 `RootUnavailable`。**记录范围始终是整个宿主窗口**，可能包含 Inspector 标题、其他 Editor 和宿主控件，不能按请求的 Editor 实例可靠过滤；`RequestedEditorInstanceId` 只记录请求来源。
+
+- `Nodes` 按绘制记录顺序排列，依据 Unity 调试器的 `RecordedLevel` 缩进建立关系：此前最近且缩进更浅的记录作为父节点，同缩进记录为兄弟；布局项也可有绘制子项。原生 begin/end 不保证成对，不据此推断嵌套，也不补造缩进跳级中的祖先。多个顶层节点保持多个根，`Depth` 表示已记录父链的深度；`InstructionIndex` 和 `RecordedLevel` 保留原始位置与缩进。此关系表示绘制记录层级，不是业务控件对象关系。
+- 节点记录指令种类、启用状态和矩形；Draw 可含实际绘制文本、Tooltip、样式名称及可见矩形，命名控件可含名称／临时控件 ID，属性边界可含属性路径与目标类型名。不会读取业务值、执行任意 getter 或返回 GUIContent／GUIStyle 等实时引用。
+- `Rect` 原样复制统一指令的 `unclippedRect`；Draw 的 `VisibleRect` 原样复制分类记录的 `visibleRect`，保留原始坐标含义，不视为 UI Toolkit 的 Layout／WorldBound。
+- `RecordedInstructionCount` 为原始记录数，每条记录均可形成一个节点，包括原生确实提供的结束标记。节点预算限制输出节点数量，深度预算限制已记录父链的深度；仅预算实际省略记录时 `IsTruncated` 为 true，与局部读取失败的 `Partial` 独立。
+- **`IsCompleteControlTree` 始终为 false。** 绘制调用与业务控件不是一一对应关系，未绘制分支和缓存优化块可能缺失，不强制刷新这些块。取得含 Draw 的记录后才完成采集；无绘制记录时会等待并最终超时，不返回成功空树。
+- 所有会话操作在 Editor 主线程调用。`Cancel()` 取消未完成会话；后台取消返回 `WrongThread` 而不改变会话，后台 `Dispose()` 抛出 `InvalidOperationException`。完成、超时、取消、目标失效、程序集重载或退出时解除本包订阅；已返回的快照作为历史数据继续有效。
+- 默认超时 2 秒，允许 `(0, 30]` 秒。采集不聚焦窗口、不切标签、不请求目标 Repaint、不直接调用 OnGUI。未展示窗口／非当前停靠标签没有可采集宿主时直接返回诊断；等待期间宿主或标签变化则中止。
+
+记录器是 Unity 的全局内部能力，每次只允许本包一个会话。已有官方 IMGUI Debugger 或已知托管订阅者时返回 `Busy`，不会抢占。观察到外部启停或切换调试目标时返回 `CaptureInterrupted`，不停止外部接管的记录器。Unity 没有提供查询原生记录器当前所有者的接口；**无法检测早已运行且没有托管订阅者的任意第三方内部采集器**，不保证与此类采集器共存。此限制及成员适配隔离在兼容层中，依据 [Unity 2022.3 内部记录接口源码](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/GUIDebugger/GUIViewDebuggerHelper.bindings.cs)。目前仅接受 Unity 2022.3 系列，实际验证基线为 2022.3.62f3。调试窗口仍提供 UI Toolkit／Odin 两种来源，IMGUI 仅作为 API 提供。
 
 ## Odin 属性树缓存
 
@@ -125,7 +171,7 @@ foreach (OdinPropertySnapshot node in snapshot.Nodes)
 
 ## 状态、只读性与有效期
 
-各查询入口都返回带 `SnapshotId`、`CapturedAtUtc`、`Status` 和 `Diagnostics` 的快照。集合对调用方只读，快照不持有窗口、元素、Odin 树或其他实时对象引用。
+各查询入口都返回带 `SnapshotId`、`CapturedAtUtc`、`Status` 和 `Diagnostics` 的快照。IMGUI 会话另有 `RequestedAtUtc`，尚未取得绘制记录时 `CapturedAtUtc` 为 null。集合对调用方只读，快照不持有窗口、元素、Odin 树或其他实时对象引用。
 
 | 状态 | 含义 |
 | --- | --- |
@@ -136,14 +182,19 @@ foreach (OdinPropertySnapshot node in snapshot.Nodes)
 | `InvalidArgument` | 采集选项非法或直接 Editor 参数为空 |
 | `WindowUnavailable` | 实例 ID 对应的窗口当前不可用 |
 | `RootUnavailable` | UI Toolkit 根、Inspector tracker、Odin 树或根尚未建立，或 Odin 树已释放；具体来源见诊断 |
-| `UnsupportedEditorVersion` | Unity 已有根或 tracker 的内部字段不兼容 |
+| `UnsupportedEditorVersion` | Unity 已有根、tracker 或 IMGUI 记录接口与适配版本不兼容 |
 | `OdinUnavailable` | 未加载 Odin 程序集 |
 | `UnsupportedOdinVersion` | Odin 内部成员与适配要求不兼容 |
-| `UnsupportedTarget` | 目标窗口或 Editor 不属于支持的 Odin 查询入口 |
+| `UnsupportedTarget` | 目标不属于支持的 Odin 入口，或 IMGUI Editor 请求无法唯一确定宿主 |
 | `EditorUnavailable` | 直接查询的 Editor 已失效 |
+| `Pending` | IMGUI 会话正在等待自然绘制 |
+| `Busy` | 已有本包会话、官方 IMGUI Debugger 或已知记录订阅者 |
+| `TimedOut` | 在限时内未取得目标的绘制记录 |
+| `Cancelled` | IMGUI 会话被取消，或因程序集重载／退出而清理 |
+| `CaptureInterrupted` | 调试记录器被外部启停／接管，或宿主、标签、Editor 归属发生变化 |
 | `Failed` | 整体查询失败，原因见诊断 |
 
-调用入口先检查线程，再访问 Unity 对象。查询不聚焦窗口、不切换标签、不改变 Selection 或控件值，不创建 UI、不自动刷新、不缓存实时对象。
+调用入口先检查线程，再访问 Unity 对象。查询不聚焦窗口、不切换标签、不改变 Selection 或控件值，不创建 UI、不自动刷新。同步查询不缓存实时对象；IMGUI 会话在有限等待期间持有目标并订阅事件，结束时释放引用及订阅。
 
 Unity 2022.3 的公开 `rootVisualElement` getter 会创建根并可能初始化 Overlay，因此本包以内部兼容层仅读取 `EditorWindow.m_UIRootElement`。字段不兼容时不回退到公开 getter。这个内部结构依赖是当前版本限制，依据 [Unity 2022.3 官方源码](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/EditorWindow.cs)。
 
