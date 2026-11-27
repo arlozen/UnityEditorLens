@@ -4,18 +4,19 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 
 ## 当前状态
 
-当前版本 0.1.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的 C# 查询 API：
+当前版本 0.2.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的 C# 查询 API：
 
 - `EditorLensQuery.EnumerateWindows()`：枚举已加载的 `EditorWindow`，包含未聚焦和未展示实例。
 - `EditorLensQuery.CaptureTree(instanceId)`：采集窗口已有的 UI Toolkit 物理元素树，包含基础状态、文本与常用标量值。
+- `EditorLensQuery.CaptureOdinTree(instanceId)` / `CaptureOdinTree(editor)`：可选采集 OdinEditorWindow、Inspector 内 OdinEditor 或指定 OdinEditor 的已有属性树缓存，返回结构与元数据。
 - 查询结果为脱离实时对象的历史快照，带有状态、诊断及截断信息；必须从 Unity 主线程调用。
-- `Window/Analysis/Editor Lens`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持按标题、类型全名或实例 ID 搜索窗口。
+- `Tools/Editor Lens/Analysis Window`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持窗口搜索及 UI Toolkit／Odin 属性树来源切换。
 
 打开调试窗口时枚举一次已加载窗口，选择目标时采集一次控件树；之后通过“刷新窗口列表”和“刷新控件树”手动更新。刷新列表会保留仍存在的目标及其树快照，不自动重新采集树；列表搜索也不触发查询。节点详情中的文本、值、布局和状态均来自本次历史快照。
 
 树展示保留真实层级，标记 IMGUI 边界、截断和数据读取失败；窗口尚未创建 UI Toolkit 根时显示诊断，不创建目标根。控件树搜索、定时刷新、JSON 导出和外部调用桥接尚未实现。完整操作说明、调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
 
-IMGUI 内部控件解析、Odin 属性树、运行时游戏 UI、控件操作及截图不属于首版功能范围。
+Odin 支持采用可选反射适配，生产包无 Sirenix 编译引用或包依赖；当前适配基线为 Odin 4.0.2.4。仅遍历已实例化缓存，返回 `CachedOnly`，不承诺完整业务树，不读取业务值或计算动态状态。任意 IMGUI 内部控件解析、运行时游戏 UI、控件操作及截图尚未实现。
 
 ## 工程与分发包
 
@@ -27,7 +28,7 @@ UnityEditorLens/
 ├─ Packages/
 │  ├─ com.arlozen.editorlens/       可独立分发的 UPM 包
 │  │  ├─ Editor/                   仅限 Editor 的程序集
-│  │  ├─ Tests/Editor/             可选的 EditMode 行为测试
+│  │  ├─ Tests/                   常规及可选 Odin EditMode 行为测试
 │  │  ├─ package.json
 │  │  ├─ README.md
 │  │  └─ AGENTS.md
@@ -41,7 +42,7 @@ UnityEditorLens/
 
 - 开发工程版本：Unity 2022.3.62f3，以 ProjectSettings/ProjectVersion.txt 为准。
 - 包清单声明 Unity 基线为 2022.3；其他版本尚未验证。
-- 包名：com.arlozen.editorlens；显示名称：Editor Lens；初始版本：0.1.0。
+- 包名：com.arlozen.editorlens；显示名称：Editor Lens；版本：0.2.0。
 - 程序集：EditorLens.Editor；根命名空间：EditorLens。
 - 插件仅用于 Editor，保持独立于 ET、Odin 等第三方框架。
 
@@ -68,5 +69,7 @@ UnityEditorLens/
 默认通过 API、日志和后台检查验证。前台验证须说明必要性和预计占用时间，并取得用户明确授权；未验证的阶段应如实记录。
 
 开发宿主显式使用 Test Framework 1.1.33，并通过 `testables` 启用包内 `EditorLens.Tests`。生产包无测试框架依赖。工程已在 Unity 中打开时，使用同版本独立临时宿主进行后台导入、编译和 EditMode 验证，不对同一工程启动第二实例。包内 README 提供测试命令和结果检查要求。
+
+Odin 专用程序集 `EditorLens.Odin.Tests` 仅在安装 Odin 的测试宿主显式设置 `EDITOR_LENS_ODIN_TESTS` 后编译。验证时分别使用无 Odin、有 Odin 的独立宿主；不将 Sirenix 资源作为分发包依赖。
 
 本仓库跟踪工程资源、配置、包和文档，忽略 Unity 缓存、日志、用户设置及自动生成的工程文件。

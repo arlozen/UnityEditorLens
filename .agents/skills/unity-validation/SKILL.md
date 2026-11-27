@@ -11,7 +11,8 @@ description: 为 UnityEditorLens 选择和执行包结构、Unity 导入与编�
 - 仅文档或技能变更：检查格式、链接、技能定义和 Git 差异，不启动 Unity。
 - 包配置或程序集变更：解析 JSON，核对包标识、依赖、Editor 限制及导入结果；空包骨架不声称完成 C# 功能验证。
 - C# 变更：验证 Unity 编译；逻辑变化按风险选择已有或必要的新 EditMode 测试，不创建复述实现的测试。
-- 当前首版目标是窗口查询和 UI Toolkit 树检查；属性或树结构正确不能证明最终视觉效果正确。
+- 窗口查询、UI Toolkit 物理树与可选 Odin 缓存树均以实际结构验证；结构正确不能证明最终视觉效果正确。
+- Odin 适配变更分别在无 Odin 和安装受支持 Odin 的独立宿主验证；专用测试程序集通过 EDITOR_LENS_ODIN_TESTS 显式启用，不让生产包或常规测试依赖 Sirenix。
 
 ## 可用入口
 

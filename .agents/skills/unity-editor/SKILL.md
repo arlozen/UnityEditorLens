@@ -37,6 +37,7 @@ ilspycmd -t UnityEditor.EditorWindow -r "$referenceDirectory" "$assemblyPath"
 - 对外查询优先返回普通快照数据，明确标识有效期、采集状态和截断情况；不假定窗口或节点跨请求持续有效。
 - UI Toolkit 树表示当前已创建的实际元素层级，不等同于业务数据树；虚拟列表未创建的行不补造节点。
 - 遇到 IMGUIContainer 等不支持展开的区域时保留边界和能力说明，不伪造内部控件树。
+- Odin 可选适配只读已有树与子节点缓存，保持无 Sirenix 编译依赖；不使用可能惰性初始化的 Tree、RootProperty、Children.Count 或常规枚举入口。未知分支标为缓存范围，不宣称完整；版本差异隔离并返回诊断。
 - 控件值仅按已知类型读取，不反射执行任意属性 getter 来拼凑信息。
 - 数据查询不要放入高频重绘或列表绑定回调；默认手动刷新，按实际需求增加有界的刷新机制。
 

@@ -6,8 +6,9 @@
 
 - 包清单声明 Unity 基线为 2022.3；当前开发宿主为 2022.3.62f3，不据此宣称其他版本已验证。
 - 实现代码放在 Editor 目录，保持 EditorLens.Editor 程序集仅支持 Editor，根命名空间为 EditorLens。
-- 不依赖 ET、Odin 或原开发宿主的 Assets、配置、脚本及技能；其他工具通过适配层调用本包。
-- 首版只实现编辑器窗口信息与 UI Toolkit 树的只读查询，以及 UI Toolkit 调试窗口。
+- 生产包不直接依赖 ET、Odin 或原开发宿主的 Assets、配置、脚本及技能；Odin 支持隔离为可选反射适配，缺失或不兼容时返回诊断。
+- 实现编辑器窗口信息、UI Toolkit 物理树及可选 Odin 已有属性缓存的只读查询，以及 UI Toolkit 调试窗口。
+- Odin 查询只遍历已实例化缓存，明确标记 CachedOnly；不通过 Tree、Children.Count 或遍历 API 初始化节点，不执行业务 getter、resolver 或绘制，不将逻辑属性节点当作 IMGUI 物理控件。
 - 查询逻辑独立于调试窗口；Unity 对象和元素树只在 Unity 主线程访问。
 - 查询不改变目标窗口焦点、标签、Selection 或控件状态。
 - 返回结果明确快照和节点标识的有效期，不伪造未实例化或不支持解析的内容。

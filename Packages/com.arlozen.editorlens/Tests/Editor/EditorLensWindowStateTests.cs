@@ -316,6 +316,162 @@ namespace EditorLens.Tests
             Assert.That(state.SelectedNode.HasUncapturedChildren, Is.True);
         }
 
+        [Test]
+        public void SourceSwitchOnlyCapturesSelectedTargetAndClearsSelectionsAcrossKinds()
+        {
+            var target = Window(11, "目标", "Example.Window");
+            var visualNode = Node(0, "物理控件");
+            var odinNode = new OdinPropertySnapshot { NodeId = 0, TreeId = 0, Name = "属性" };
+            var odinTree = OdinTree(target, odinNode);
+            int visualCount = 0;
+            int odinCount = 0;
+            var state = new EditorLensWindowState(
+                () => WindowList(target),
+                id => { visualCount++; return Tree(target, visualNode); },
+                id => { odinCount++; return odinTree; });
+
+            Assert.That(state.Source, Is.EqualTo(EditorLensTreeSource.UIToolkit));
+            state.SelectSource(EditorLensTreeSource.Odin);
+            state.RefreshTree();
+            state.RefreshWindows();
+            Assert.That(visualCount + odinCount, Is.Zero);
+
+            state.SelectWindow(target.InstanceId);
+            state.SelectNode(0);
+            state.SelectSource(EditorLensTreeSource.Odin);
+            Assert.That(odinCount, Is.EqualTo(1));
+            Assert.That(state.CurrentSnapshot, Is.SameAs(odinTree));
+            Assert.That(state.SelectedOdinNode, Is.SameAs(odinNode));
+            Assert.That(state.SelectedNode, Is.Null);
+
+            state.SelectSource(EditorLensTreeSource.UIToolkit);
+            Assert.That(visualCount, Is.EqualTo(1));
+            Assert.That(odinCount, Is.EqualTo(1));
+            Assert.That(state.OdinTree, Is.Null);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(state.SelectedNode, Is.Null);
+            state.SelectNode(0);
+            Assert.That(state.SelectedNode, Is.SameAs(visualNode));
+            state.SelectSource(EditorLensTreeSource.Odin);
+            Assert.That(odinCount, Is.EqualTo(2));
+            Assert.That(state.Tree, Is.Null);
+            Assert.That(state.SelectedNode, Is.Null);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+        }
+
+        [Test]
+        public void OdinListRefreshAndSearchPreserveHistoryUntilTargetDisappears()
+        {
+            var target = Window(11, "旧标题", "Example.Window");
+            var updated = Window(11, "新标题", "Example.Window");
+            var nextList = WindowList(target);
+            var node = new OdinPropertySnapshot { NodeId = 0, TreeId = 0 };
+            var snapshot = OdinTree(target, node);
+            int captureCount = 0;
+            var state = new EditorLensWindowState(
+                () => nextList, id => Tree(target),
+                id => { captureCount++; return snapshot; });
+            state.RefreshWindows();
+            state.SelectSource(EditorLensTreeSource.Odin);
+            state.SelectWindow(target.InstanceId);
+            state.SelectNode(0);
+
+            state.SetSearch("不匹配");
+            nextList = WindowList(updated);
+            state.RefreshWindows();
+
+            Assert.That(state.VisibleWindows, Is.Empty);
+            Assert.That(state.Target, Is.SameAs(updated));
+            Assert.That(state.OdinTree, Is.SameAs(snapshot));
+            Assert.That(state.SelectedOdinNode, Is.SameAs(node));
+            Assert.That(captureCount, Is.EqualTo(1));
+
+            nextList = WindowList();
+            state.RefreshWindows();
+            state.RefreshTree();
+            Assert.That(state.Target, Is.Null);
+            Assert.That(state.CurrentSnapshot, Is.Null);
+            Assert.That(state.Tree, Is.Null);
+            Assert.That(state.OdinTree, Is.Null);
+            Assert.That(state.SelectedNode, Is.Null);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(state.Source, Is.EqualTo(EditorLensTreeSource.Odin));
+            Assert.That(state.SelectionNotice, Is.Not.Empty);
+            Assert.That(captureCount, Is.EqualTo(1));
+        }
+
+        [TestCase(QueryStatus.OdinUnavailable)]
+        [TestCase(QueryStatus.UnsupportedOdinVersion)]
+        [TestCase(QueryStatus.UnsupportedTarget)]
+        [TestCase(QueryStatus.RootUnavailable)]
+        [TestCase(QueryStatus.WindowUnavailable)]
+        [TestCase(QueryStatus.Failed)]
+        public void OdinFailedRefreshKeepsNewDiagnosticAndClearsOldSelection(QueryStatus status)
+        {
+            var target = Window(11, "目标", "Example.Window");
+            var node = new OdinPropertySnapshot { NodeId = 0, TreeId = 0 };
+            var nextTree = OdinTree(target, node);
+            int captureCount = 0;
+            var state = new EditorLensWindowState(() => WindowList(target), id => Tree(target),
+                id => { captureCount++; return nextTree; });
+            state.RefreshWindows();
+            state.SelectSource(EditorLensTreeSource.Odin);
+            state.SelectWindow(target.InstanceId);
+            state.SelectNode(0);
+            nextTree = new OdinTreeSnapshot { Status = status, Diagnostics = new[] { "本次 Odin 诊断" } };
+
+            state.RefreshTree();
+
+            Assert.That(state.OdinTree, Is.SameAs(nextTree));
+            Assert.That(state.CurrentSnapshot, Is.SameAs(nextTree));
+            Assert.That(state.OdinTree.Diagnostics, Is.EqualTo(new[] { "本次 Odin 诊断" }));
+            Assert.That(state.Target, Is.SameAs(target));
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(state.SelectedNode, Is.Null);
+            Assert.That(captureCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void OdinSelectionResolvesOnlyWithinLatestSnapshotWhenNodeIdsAreReused()
+        {
+            var first = Window(11, "第一目标", "Example.Window");
+            var second = Window(22, "第二目标", "Example.Window");
+            var firstNode = new OdinPropertySnapshot { NodeId = 0, TreeId = 0, Name = "旧属性" };
+            var secondNode = new OdinPropertySnapshot { NodeId = 0, TreeId = 0, Name = "新属性" };
+            var firstTree = OdinTree(first, firstNode);
+            var secondTree = OdinTree(second, secondNode);
+            var requestedIds = new List<int>();
+            var state = new EditorLensWindowState(() => WindowList(first, second), id => Tree(first),
+                id => { requestedIds.Add(id); return id == 11 ? firstTree : secondTree; });
+            state.RefreshWindows();
+            state.SelectSource(EditorLensTreeSource.Odin);
+            state.SelectWindow(first.InstanceId);
+            state.SelectNode(0);
+            Assert.That(state.SelectedOdinNode, Is.SameAs(firstNode));
+
+            state.SelectWindow(second.InstanceId);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            state.SelectNode(0);
+            Assert.That(state.SelectedOdinNode, Is.SameAs(secondNode));
+            state.SelectNode(999);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            state.SelectNode(0);
+            state.RefreshTree();
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(requestedIds, Is.EqualTo(new[] { 11, 22, 22 }));
+        }
+
+        private static OdinTreeSnapshot OdinTree(WindowSnapshot target, OdinPropertySnapshot node)
+        {
+            return new OdinTreeSnapshot
+            {
+                Window = target,
+                Status = QueryStatus.Success,
+                Nodes = new[] { node },
+                Trees = new[] { new OdinPropertyTreeSnapshot { TreeId = node.TreeId, RootNodeId = node.NodeId } }
+            };
+        }
+
         private static WindowSnapshot Window(int id, string title, string typeName)
         {
             return new WindowSnapshot { InstanceId = id, Title = title, TypeName = typeName };

@@ -159,6 +159,101 @@ namespace EditorLens.Tests
         }
 
         [Test]
+        public void OdinTreeMappingKeepsExistingRootsAndCachedSiblingOrderWithoutInventedNodes()
+        {
+            var firstRoot = new OdinPropertySnapshot { NodeId = 0, TreeId = 0, ChildIds = new[] { 1, 2 } };
+            var child = new OdinPropertySnapshot { NodeId = 1, TreeId = 0, ParentId = 0 };
+            var omitted = new OdinPropertySnapshot
+            {
+                NodeId = 2, TreeId = 0, ParentId = 0, HasOmittedCachedChildren = true
+            };
+            var secondRoot = new OdinPropertySnapshot { NodeId = 3, TreeId = 1 };
+            var snapshot = new OdinTreeSnapshot
+            {
+                Nodes = new[] { firstRoot, child, omitted, secondRoot },
+                Trees = new[]
+                {
+                    new OdinPropertyTreeSnapshot { TreeId = 0, RootNodeId = 0 },
+                    new OdinPropertyTreeSnapshot { TreeId = 1, RootNodeId = 3 },
+                    new OdinPropertyTreeSnapshot { TreeId = 2, Status = QueryStatus.RootUnavailable }
+                }
+            };
+
+            var roots = SnapshotPresentation.BuildOdinTree(snapshot);
+
+            Assert.That(roots.Select(root => root.id), Is.EqualTo(new[] { 0, 3 }));
+            Assert.That(roots[0].data, Is.SameAs(firstRoot));
+            Assert.That(roots[0].children.Select(item => item.id), Is.EqualTo(new[] { 1, 2 }));
+            Assert.That(roots[0].children.Last().children, Is.Empty);
+            Assert.That(roots[1].data, Is.SameAs(secondRoot));
+            Assert.That(roots[1].children, Is.Empty);
+            Assert.That(SnapshotPresentation.OdinNodeRow(omitted), Does.Contain("缓存子项已省略"));
+        }
+
+        [Test]
+        public void OdinTreeStatusPreservesEverySourceAndMissingRootDiagnostic()
+        {
+            var snapshot = new OdinTreeSnapshot
+            {
+                Status = QueryStatus.Partial,
+                IsTruncated = true,
+                Nodes = new[] { new OdinPropertySnapshot { NodeId = 0 } },
+                Diagnostics = new[] { "整体诊断" },
+                Trees = new[]
+                {
+                    new OdinPropertyTreeSnapshot
+                    {
+                        TreeId = 0, RootNodeId = 0, Status = QueryStatus.Truncated,
+                        Sources = new[]
+                        {
+                            new OdinTreeSourceSnapshot { SourceIndex = 0, EditorInstanceId = 11, EditorTypeName = "Example.FirstEditor", TargetTypeName = "Example.Target" },
+                            new OdinTreeSourceSnapshot { SourceIndex = 2, EditorInstanceId = 22, EditorTypeName = "Example.SecondEditor" }
+                        }
+                    },
+                    new OdinPropertyTreeSnapshot
+                    {
+                        TreeId = 1, Status = QueryStatus.RootUnavailable,
+                        Diagnostics = new[] { "来源树尚未初始化" },
+                        Sources = new[] { new OdinTreeSourceSnapshot { SourceIndex = 3, TargetTypeName = "Example.WindowTarget" } }
+                    }
+                }
+            };
+
+            string status = SnapshotPresentation.OdinTreeStatus(snapshot);
+
+            Assert.That(status, Does.Contain("Partial").And.Contain("已截断").And.Contain("整体诊断"));
+            Assert.That(status, Does.Contain("节点数：1").And.Contain("属性树：2").And.Contain("采集："));
+            Assert.That(status, Does.Contain("树 #1：RootUnavailable").And.Contain("来源树尚未初始化"));
+            Assert.That(status, Does.Contain("来源 #0").And.Contain("Editor #11").And.Contain("Example.FirstEditor"));
+            Assert.That(status, Does.Contain("来源 #2").And.Contain("Editor #22").And.Contain("Example.SecondEditor"));
+            Assert.That(status, Does.Contain("来源 #3").And.Contain("Example.WindowTarget"));
+            Assert.That(SnapshotPresentation.OdinCachedOnlyNotice, Does.Contain("CachedOnly").And.Contain("完整性未知"));
+        }
+
+        [Test]
+        public void OdinRowsDescribePropertyMetadataAndCacheLimits()
+        {
+            var node = new OdinPropertySnapshot
+            {
+                Name = "internalName",
+                NiceName = "显示\n名称",
+                Kind = OdinPropertyKind.Method,
+                Path = "private.path",
+                ValueTypeName = "Example.PrivateType",
+                IsDataAvailable = false,
+                HasOmittedCachedChildren = true
+            };
+
+            string row = SnapshotPresentation.OdinNodeRow(node);
+
+            Assert.That(row, Does.Contain("Method").And.Contain("显示 名称"));
+            Assert.That(row, Does.Contain("缓存子项已省略").And.Contain("数据不可用"));
+            Assert.That(row, Does.Not.Contain(node.Path).And.Not.Contain(node.ValueTypeName));
+            node.NiceName = null;
+            Assert.That(SnapshotPresentation.OdinNodeRow(node), Does.Contain("internalName"));
+        }
+
+        [Test]
         public void NonFiniteBoundsExplainThatLayoutMayNotBeComplete()
         {
             var rect = new Rect(float.NaN, 1.5f, float.PositiveInfinity, 2);

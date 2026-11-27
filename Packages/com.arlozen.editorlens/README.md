@@ -1,6 +1,6 @@
 # Editor Lens
 
-Editor Lens 0.1.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的窗口枚举和元素树查询 API。命名空间为 `EditorLens`，程序集为仅限 Editor 的 `EditorLens.Editor`，生产包无第三方依赖。
+Editor Lens 0.2.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步、只读的窗口枚举、UI Toolkit 物理树和可选 Odin 属性树缓存查询 API。命名空间为 `EditorLens`，程序集为仅限 Editor 的 `EditorLens.Editor`，生产包无第三方编译引用或包依赖。
 
 包声明 Unity 基线为 2022.3，开发与验证基线为 2022.3.62f3；不据此承诺其他版本已经验证。控件树搜索、定时刷新、JSON 导出和编辑器外部接入尚未实现。
 
@@ -8,15 +8,17 @@ Editor Lens 0.1.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步
 
 1. 将整个 `com.arlozen.editorlens` 目录复制到目标工程的 `Packages/com.arlozen.editorlens`，保留已有 `.meta`。
 2. 等待 Unity 导入并确认 C# 编译无错误。自定义 Editor asmdef 中引用 `EditorLens.Editor`；不要从 Runtime 程序集引用本包。
-3. 通过 `Window/Analysis/Editor Lens` 打开调试窗口，或在 Unity Editor 主线程直接调用 API；查询 API 无需打开专用窗口。
+3. 通过 `Tools/Editor Lens/Analysis Window` 打开调试窗口，或在 Unity Editor 主线程直接调用 API；查询 API 无需打开专用窗口。
 
 ## 调试窗口
 
-通过 `Window/Analysis/Editor Lens` 打开窗口。界面使用 UI Toolkit，默认尺寸为 1200×700、最小尺寸为 900×500，三栏宽度可拖动分隔栏调整：
+通过 `Tools/Editor Lens/Analysis Window` 打开窗口。界面使用 UI Toolkit，默认尺寸为 1200×700、最小尺寸为 900×500，三栏宽度可拖动分隔栏调整：
 
 - 左栏列出全部已加载的 `EditorWindow`，包括未展示实例和 Editor Lens 自身；行内显示标题、类型简称与实例 ID，同标题实例通过 ID 区分。搜索按标题、类型全名或实例 ID 进行不区分大小写的包含匹配，并显示匹配数和总数。
 - 中栏展示当前目标的可展开控件树，保留真实层级和兄弟顺序；新快照默认只展开根。节点行显示类型、名称，以及 IMGUI 边界、未完整采集子项和数据不可用标记。
 - 右栏展示目标窗口的类型、ID、位置和状态；选择节点后可查看节点 ID、类型、名称、class、文本、值、布局、显示、启用、panel 状态与诊断。详情为可复制的只读字段。
+
+顶部可切换“UI Toolkit”和“Odin 属性树”，默认 UI Toolkit。Odin 视图展示已有逻辑属性缓存，多棵树保留各自根及来源；详情展示名称、路径、种类、声明类型和诊断。Odin 节点不提供 UI Toolkit 布局、panel、业务值或动态显示状态，视图持续提示缓存范围及完整性未知。
 
 打开时只枚举一次窗口，不自动选择目标。选择窗口会采集一次控件树；后续通过顶部两个按钮手动更新：
 
@@ -24,6 +26,7 @@ Editor Lens 0.1.0 提供 UI Toolkit 调试窗口，以及 Unity Editor 内同步
 | --- | --- |
 | 刷新窗口列表 | 重新枚举窗口；目标仍在列表时保留当前树与节点详情，不隐式重新采集；目标消失时清空树和详情并显示提示 |
 | 刷新控件树 | 仅重新采集当前目标，清空旧节点选择、展开状态和详情 |
+| 切换树来源 | 有目标时按新来源采集一次，清空旧节点选择；不自动回退到另一来源 |
 | 搜索窗口 | 仅过滤已有列表快照，不触发查询；目标被过滤隐藏时仍保留当前查看内容 |
 | 展开树或选择节点 | 仅读取已有树快照，不触发查询 |
 
@@ -75,7 +78,34 @@ foreach (WindowSnapshot window in windows.Windows)
 
 节点数默认上限为 10,000，深度默认上限为 128，可通过选项调整。`MaxNodes` 必须大于 0，`MaxDepth` 必须大于或等于 0；仅实际省略节点时标记截断。`ChildIds` 只引用本次实际采集的节点，省略的直接子节点通过 `HasUncapturedChildren` 标记。
 
-树只覆盖窗口已有根下的内容，不包含停靠栏等宿主界面，不创建虚拟列表未实例化的行。`IMGUIContainer` 标记内部 IMGUI 无法解析，仍遍历其已有的真实 UI Toolkit 子元素，不执行 `onGUIHandler`。不解析 Odin 属性树或运行时游戏 UI。
+树只覆盖窗口已有根下的内容，不包含停靠栏等宿主界面，不创建虚拟列表未实例化的行。`IMGUIContainer` 标记内部 IMGUI 无法解析，仍遍历其已有的真实 UI Toolkit 子元素，不执行 `onGUIHandler`。Odin 属性缓存通过下述独立接口查询；不解析任意 IMGUI 物理控件或运行时游戏 UI。
+
+## Odin 属性树缓存
+
+Odin 适配是可选能力，基线为 Odin Inspector **4.0.2.4** 和 Unity **2022.3.62f3**。查询只检查已加载的 Odin 类型，不安装或主动加载 Sirenix 程序集。缺少 Odin 或内部成员形状不兼容时返回状态和诊断；其他版本尚未验证。
+
+```csharp
+// windowInstanceId 来自 EnumerateWindows，目标为 OdinEditorWindow 或 Inspector。
+OdinTreeSnapshot snapshot = EditorLensQuery.CaptureOdinTree(windowInstanceId,
+    new TreeCaptureOptions { MaxNodes = 10000, MaxDepth = 128 });
+
+foreach (OdinPropertySnapshot node in snapshot.Nodes)
+    Debug.Log($"tree={node.TreeId} node={node.NodeId} parent={node.ParentId} "
+        + $"{node.Kind} {node.Path} ({node.ValueTypeName})");
+
+// 也可查询调用方已经持有的 UnityEditor.Editor；不必打开 Editor Lens。
+// OdinTreeSnapshot direct = EditorLensQuery.CaptureOdinTree(existingEditor);
+```
+
+- 窗口入口查询 OdinEditorWindow 已有的树／Editor 槽位，或所选 Inspector 已有 tracker 的 OdinEditor 列表；不把其他 Inspector 的 Editor 混入。已有 Inspector 列表没有 OdinEditor 时返回成功空结果并给出说明。
+- Editor 重载接受已有 OdinEditor 及其派生类；不创建 Editor。空参数、已销毁实例及普通 Editor 分别返回明确诊断。
+- `Trees` 保存树状态、根节点 ID 和 `Sources` 槽位元数据（槽位索引、Editor 实例 ID／类型、目标类型）。按树引用去重并保留所有来源，相同目标的不同树分别保留。
+- `Nodes` 以深度优先顺序保存快照内全局唯一 ID、树 ID、父子 ID、深度、原始名称、友好名称、Odin 路径、节点种类和声明类型；种类包括值、分组、方法及未知。类型等元数据不可用时保留节点与诊断。
+- 默认总预算为 10,000 个节点、每棵既有根深度为 0，最大深度 128。所有唯一树共享节点预算，根计入预算；节点和树 ID 仅在本次快照中有效。
+
+**`CachedOnly` 始终为 true。** 查询从已有根和子节点字典读取已实例化的缓存，包括已建立但未绘制的节点；不保证业务树完整，缓存为空不证明没有潜在子节点。不创建、更新或绘制树，不调用 `Tree`、`RootProperty`、`Children.Count`、子节点索引器或常规遍历方法，不读取业务值、执行 getter、求解动态标签或计算可见／启用／展开状态。
+
+`IsTruncated` 仅表示预算确实省略了缓存节点；`HasOmittedCachedChildren` 标记已知被省略的缓存子项，不表示未实例化分支的完整性。未初始化和已释放的树返回来源诊断，不当作成功空树或预算截断。多来源局部失败时保留其他可用结构并报告 `Partial`。UI Toolkit 树和 Odin 逻辑属性树独立，节点间没有物理控件对应关系。
 
 ## 文本和值支持
 
@@ -95,7 +125,7 @@ foreach (WindowSnapshot window in windows.Windows)
 
 ## 状态、只读性与有效期
 
-两个入口都返回带 `SnapshotId`、`CapturedAtUtc`、`Status` 和 `Diagnostics` 的快照。集合对调用方只读，快照不持有窗口、元素或其他 Unity 对象引用。
+各查询入口都返回带 `SnapshotId`、`CapturedAtUtc`、`Status` 和 `Diagnostics` 的快照。集合对调用方只读，快照不持有窗口、元素、Odin 树或其他实时对象引用。
 
 | 状态 | 含义 |
 | --- | --- |
@@ -103,15 +133,21 @@ foreach (WindowSnapshot window in windows.Windows)
 | `Truncated` | 节点数或深度上限实际省略了节点 |
 | `Partial` | 保留可用数据，但局部读取失败；也可能同时 `IsTruncated` |
 | `NotInitialized` / `WrongThread` | Editor 主线程初始化尚未完成，或调用不在主线程 |
-| `InvalidArgument` | 采集选项非法 |
+| `InvalidArgument` | 采集选项非法或直接 Editor 参数为空 |
 | `WindowUnavailable` | 实例 ID 对应的窗口当前不可用 |
-| `RootUnavailable` | 窗口尚未创建 UI Toolkit 根；不是成功空树，也不能据此断定窗口只使用 IMGUI |
-| `UnsupportedEditorVersion` | 已有根字段缺失、类型不符或无法读取 |
+| `RootUnavailable` | UI Toolkit 根、Inspector tracker、Odin 树或根尚未建立，或 Odin 树已释放；具体来源见诊断 |
+| `UnsupportedEditorVersion` | Unity 已有根或 tracker 的内部字段不兼容 |
+| `OdinUnavailable` | 未加载 Odin 程序集 |
+| `UnsupportedOdinVersion` | Odin 内部成员与适配要求不兼容 |
+| `UnsupportedTarget` | 目标窗口或 Editor 不属于支持的 Odin 查询入口 |
+| `EditorUnavailable` | 直接查询的 Editor 已失效 |
 | `Failed` | 整体查询失败，原因见诊断 |
 
 调用入口先检查线程，再访问 Unity 对象。查询不聚焦窗口、不切换标签、不改变 Selection 或控件值，不创建 UI、不自动刷新、不缓存实时对象。
 
 Unity 2022.3 的公开 `rootVisualElement` getter 会创建根并可能初始化 Overlay，因此本包以内部兼容层仅读取 `EditorWindow.m_UIRootElement`。字段不兼容时不回退到公开 getter。这个内部结构依赖是当前版本限制，依据 [Unity 2022.3 官方源码](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/EditorWindow.cs)。
+
+Inspector 适配只读取 `PropertyEditor.m_Tracker` 和已有 tracker 的公开 `activeEditors`；不访问会创建或重建 tracker 的 `tracker`／`sharedTracker`，也不调用刷新、锁定或目标切换操作。Odin 私有缓存字段同样隔离在兼容层，失配时不会回退到会初始化树的 API。
 
 窗口实例 ID 只在当前 domain 内对象存活期间有效，Unity 可能复用 ID；窗口关闭或程序集重载后应重新枚举，不持久化这些 ID。节点 ID 仅在所属快照内有效，不能定位后续请求的实时节点。源窗口或元素变化、销毁后，已有快照仍可作为历史数据读取；成功采集也不代表内容会持续有效。
 
@@ -124,6 +160,8 @@ Unity 2022.3 的公开 `rootVisualElement` getter 会创建根并可能初始化
 ```
 
 生产包的 `package.json` 不依赖测试框架。分发包不依赖本开发仓库的 Assets、ProjectSettings 或技能目录。
+
+`Tests/Odin` 提供独立的 `EditorLens.Odin.Tests` 程序集。仅在有受支持 Odin 的测试宿主中，将 `EDITOR_LENS_ODIN_TESTS` 添加到当前构建目标的 Scripting Define Symbols，再以 `EditorLens.Odin.Tests` 为测试过滤条件运行。常规测试不引用 Sirenix，无 Odin 宿主不启用该符号。分别验证两种宿主的导入、编译及非零测试数；测试准备阶段可以显式建立缓存，采集阶段必须保持只读。
 
 以下 PowerShell 7 命令使用实际匹配的 Unity 路径及未被其他 Unity 实例占用的测试宿主；日志与 XML 放到宿主忽略的 `Logs` / `TestResults` 目录：
 

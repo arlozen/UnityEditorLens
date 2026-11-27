@@ -21,20 +21,7 @@ namespace EditorLens
 
         internal void Show(WindowSnapshot window, VisualElementSnapshot node)
         {
-            windowFields.Clear();
-            nodeFields.Clear();
-            Heading(windowFields, "目标窗口信息");
-            if (window == null)
-                windowFields.Add(new Label("请选择左侧窗口。"));
-            else
-            {
-                Field(windowFields, "标题", window.Title);
-                Field(windowFields, "窗口类型", window.TypeName);
-                Field(windowFields, "实例 ID", window.InstanceId.ToString(CultureInfo.InvariantCulture));
-                Field(windowFields, "位置", SnapshotPresentation.RectText(window.Position));
-                Field(windowFields, "焦点 / 停靠 / 最大化", $"{window.IsFocused} / {window.IsDocked} / {window.IsMaximized}");
-            }
-
+            ShowWindow(window);
             Heading(nodeFields, "选中节点详情");
             if (node == null)
             {
@@ -64,6 +51,56 @@ namespace EditorLens
             Field(nodeFields, "Display / Visibility", node.IsDataAvailable ? $"{node.Display} / {node.Visibility}" : unavailable);
             Field(nodeFields, "自身启用 / 层级启用", node.IsDataAvailable ? $"{node.EnabledSelf} / {node.EnabledInHierarchy}" : unavailable);
             Field(nodeFields, "已附着 Panel", node.IsDataAvailable ? node.IsAttachedToPanel.ToString() : unavailable);
+        }
+
+        internal void ShowOdin(WindowSnapshot window, OdinPropertySnapshot node, OdinTreeSnapshot snapshot)
+        {
+            ShowWindow(window);
+            Heading(nodeFields, "选中属性详情");
+            if (node == null)
+            {
+                nodeFields.Add(new Label("请选择 Odin 属性树中的节点。"));
+                return;
+            }
+
+            Field(nodeFields, "节点 ID", node.NodeId.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "属性树 ID", node.TreeId.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "父节点 ID", node.ParentId?.ToString(CultureInfo.InvariantCulture) ?? "根节点");
+            Field(nodeFields, "深度", node.Depth.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "名称", node.Name);
+            Field(nodeFields, "显示名称", node.NiceName);
+            Field(nodeFields, "属性路径", node.Path);
+            Field(nodeFields, "属性种类", node.Kind.ToString());
+            Field(nodeFields, "声明值类型", node.ValueTypeName);
+            Field(nodeFields, "数据可用", node.IsDataAvailable.ToString());
+            Field(nodeFields, "节点诊断", node.Diagnostic);
+            Field(nodeFields, "缓存子项已省略", node.HasOmittedCachedChildren.ToString());
+            if (snapshot != null)
+                foreach (OdinPropertyTreeSnapshot sourceTree in snapshot.Trees)
+                    if (sourceTree.TreeId == node.TreeId)
+                    {
+                        Field(nodeFields, "来源", SnapshotPresentation.OdinSources(sourceTree));
+                        Field(nodeFields, "来源状态", sourceTree.Status.ToString());
+                        Field(nodeFields, "来源诊断", string.Join("\n", sourceTree.Diagnostics));
+                        break;
+                    }
+        }
+
+        private void ShowWindow(WindowSnapshot window)
+        {
+            windowFields.Clear();
+            nodeFields.Clear();
+            Heading(windowFields, "目标窗口信息");
+            if (window == null)
+                windowFields.Add(new Label("请选择左侧窗口。"));
+            else
+            {
+                Field(windowFields, "标题", window.Title);
+                Field(windowFields, "窗口类型", window.TypeName);
+                Field(windowFields, "实例 ID", window.InstanceId.ToString(CultureInfo.InvariantCulture));
+                Field(windowFields, "位置", SnapshotPresentation.RectText(window.Position));
+                Field(windowFields, "焦点 / 停靠 / 最大化", $"{window.IsFocused} / {window.IsDocked} / {window.IsMaximized}");
+            }
         }
 
         private static void Heading(VisualElement parent, string text)

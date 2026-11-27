@@ -12,6 +12,10 @@ namespace EditorLens
         WindowUnavailable,
         RootUnavailable,
         UnsupportedEditorVersion,
-        Failed
+        Failed,
+        OdinUnavailable,
+        UnsupportedOdinVersion,
+        UnsupportedTarget,
+        EditorUnavailable
     }
 }

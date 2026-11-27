@@ -1,0 +1,24 @@
+{
+  "name": "EditorLens.Odin.Tests",
+  "rootNamespace": "EditorLens.Odin.Tests",
+  "references": [
+    "EditorLens.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "defineConstraints": [
+    "EDITOR_LENS_ODIN_TESTS"
+  ],
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Sirenix.OdinInspector.Editor.dll",
+    "Sirenix.OdinInspector.Attributes.dll",
+    "Sirenix.Utilities.Editor.dll",
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false
+}

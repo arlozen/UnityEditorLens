@@ -7,13 +7,14 @@ using UnityEngine.UIElements;
 
 namespace EditorLens
 {
-    /// <summary>窗口及 UI Toolkit 物理控件树的只读快照查看器。</summary>
+    /// <summary>窗口及 UI Toolkit、Odin 树的只读快照查看器。</summary>
     public sealed class EditorLensWindow : EditorWindow
     {
         [NonSerialized] private EditorLensWindowState state;
         private VisualElement viewRoot;
         private ToolbarButton refreshWindowsButton;
         private ToolbarButton refreshTreeButton;
+        private DropdownField sourceSelector;
         private ToolbarSearchField search;
         private ListView windows;
         private TreeView tree;
@@ -23,6 +24,7 @@ namespace EditorLens
         private Label targetTitle;
         private Label noWindows;
         private Label noTree;
+        private Label cachedOnlyNotice;
         private SnapshotDetailsView details;
         private bool updatingView;
 
@@ -58,8 +60,12 @@ namespace EditorLens
             var toolbar = new Toolbar();
             refreshWindowsButton = new ToolbarButton(RefreshWindows) { text = "刷新窗口列表", name = "refresh-windows" };
             refreshTreeButton = new ToolbarButton(RefreshTree) { text = "刷新控件树", name = "refresh-tree" };
+            sourceSelector = new DropdownField("树来源", new List<string> { "UI Toolkit", "Odin 属性树" },
+                state.Source == EditorLensTreeSource.Odin ? 1 : 0) { name = "tree-source" };
+            sourceSelector.RegisterValueChangedCallback(SourceChanged);
             toolbar.Add(refreshWindowsButton);
             toolbar.Add(refreshTreeButton);
+            toolbar.Add(sourceSelector);
             viewRoot.Add(toolbar);
 
             var split = new TwoPaneSplitView(0, 240, TwoPaneSplitViewOrientation.Horizontal);
@@ -120,6 +126,13 @@ namespace EditorLens
             pane.Add(targetTitle);
             treeStatus = new Label { name = "tree-status" };
             pane.Add(StatusArea(treeStatus));
+            cachedOnlyNotice = new Label(SnapshotPresentation.OdinCachedOnlyNotice)
+            {
+                name = "odin-cached-only",
+                enableRichText = false
+            };
+            cachedOnlyNotice.style.whiteSpace = WhiteSpace.Normal;
+            pane.Add(cachedOnlyNotice);
             noTree = new Label { name = "tree-empty" };
             noTree.style.whiteSpace = WhiteSpace.Normal;
             pane.Add(noTree);
@@ -151,10 +164,27 @@ namespace EditorLens
 
         private void BindNode(VisualElement element, int index)
         {
-            VisualElementSnapshot node = tree.GetItemDataForIndex<VisualElementSnapshot>(index);
             var label = (Label)element;
-            label.text = SnapshotPresentation.NodeRow(node);
-            label.tooltip = node.TypeName;
+            if (state.Source == EditorLensTreeSource.Odin)
+            {
+                OdinPropertySnapshot node = tree.GetItemDataForIndex<OdinPropertySnapshot>(index);
+                label.text = SnapshotPresentation.OdinNodeRow(node);
+                label.tooltip = node.Path;
+            }
+            else
+            {
+                VisualElementSnapshot node = tree.GetItemDataForIndex<VisualElementSnapshot>(index);
+                label.text = SnapshotPresentation.NodeRow(node);
+                label.tooltip = node.TypeName;
+            }
+        }
+
+        private void SourceChanged(ChangeEvent<string> change)
+        {
+            if (updatingView)
+                return;
+            state.SelectSource(change.newValue == "Odin 属性树" ? EditorLensTreeSource.Odin : EditorLensTreeSource.UIToolkit);
+            RenderTree();
         }
 
         private void SearchChanged(ChangeEvent<string> change)
@@ -189,16 +219,21 @@ namespace EditorLens
                     id = node.NodeId;
                     break;
                 }
+                else if (item is OdinPropertySnapshot odinNode)
+                {
+                    id = odinNode.NodeId;
+                    break;
+                }
             state.SelectNode(id);
-            details.Show(state.Target, state.SelectedNode);
+            RenderDetails();
         }
 
         private void RefreshWindows()
         {
-            VisualTreeSnapshot previousTree = state.Tree;
+            object previousTree = state.CurrentSnapshot;
             state.RefreshWindows();
             RenderWindowList();
-            if (!ReferenceEquals(previousTree, state.Tree))
+            if (!ReferenceEquals(previousTree, state.CurrentSnapshot))
                 RenderTree();
             else
                 RenderTarget();
@@ -238,15 +273,24 @@ namespace EditorLens
             try
             {
                 tree.ClearSelection();
-                tree.SetRootItems(SnapshotPresentation.BuildTree(state.Tree));
+                bool odin = state.Source == EditorLensTreeSource.Odin;
+                if (odin)
+                    tree.SetRootItems(SnapshotPresentation.BuildOdinTree(state.OdinTree));
+                else
+                    tree.SetRootItems(SnapshotPresentation.BuildTree(state.Tree));
                 tree.Rebuild();
                 tree.CollapseAll();
                 tree.ExpandRootItems();
-                treeStatus.text = SnapshotPresentation.TreeStatus(state.Tree);
-                noTree.text = state.Tree == null
-                    ? (string.IsNullOrEmpty(state.SelectionNotice) ? "请选择左侧窗口，采集其已有的 UI Toolkit 控件树。" : state.SelectionNotice)
+                treeStatus.text = odin ? SnapshotPresentation.OdinTreeStatus(state.OdinTree)
+                    : SnapshotPresentation.TreeStatus(state.Tree);
+                cachedOnlyNotice.style.display = odin ? DisplayStyle.Flex : DisplayStyle.None;
+                noTree.text = state.CurrentSnapshot == null
+                    ? (string.IsNullOrEmpty(state.SelectionNotice)
+                        ? (odin ? "请选择左侧窗口，采集其已有的 Odin 属性树。" : "请选择左侧窗口，采集其已有的 UI Toolkit 控件树。")
+                        : state.SelectionNotice)
                     : "本次没有可展示的节点，请查看采集状态和诊断。";
-                noTree.style.display = state.Tree == null || state.Tree.Nodes.Count == 0 ? DisplayStyle.Flex : DisplayStyle.None;
+                int nodeCount = odin ? state.OdinTree?.Nodes.Count ?? 0 : state.Tree?.Nodes.Count ?? 0;
+                noTree.style.display = nodeCount == 0 ? DisplayStyle.Flex : DisplayStyle.None;
                 RenderTarget();
             }
             finally
@@ -259,7 +303,15 @@ namespace EditorLens
         {
             targetTitle.text = state.Target == null ? "请选择窗口" : $"{state.Target.Title} · #{state.Target.InstanceId}";
             refreshTreeButton.SetEnabled(state.Target != null);
-            details.Show(state.Target, state.SelectedNode);
+            RenderDetails();
+        }
+
+        private void RenderDetails()
+        {
+            if (state.Source == EditorLensTreeSource.Odin)
+                details.ShowOdin(state.Target, state.SelectedOdinNode, state.OdinTree);
+            else
+                details.Show(state.Target, state.SelectedNode);
         }
 
         private static Label Heading(string text)
@@ -293,6 +345,8 @@ namespace EditorLens
                 refreshWindowsButton.clicked -= RefreshWindows;
             if (refreshTreeButton != null)
                 refreshTreeButton.clicked -= RefreshTree;
+            if (sourceSelector != null)
+                sourceSelector.UnregisterValueChangedCallback(SourceChanged);
             if (search != null)
                 search.UnregisterValueChangedCallback(SearchChanged);
             if (windows != null)
@@ -303,6 +357,7 @@ namespace EditorLens
             viewRoot = null;
             refreshWindowsButton = null;
             refreshTreeButton = null;
+            sourceSelector = null;
             search = null;
             windows = null;
             tree = null;
@@ -313,6 +368,7 @@ namespace EditorLens
             targetTitle = null;
             noWindows = null;
             noTree = null;
+            cachedOnlyNotice = null;
             updatingView = false;
             state = null;
         }

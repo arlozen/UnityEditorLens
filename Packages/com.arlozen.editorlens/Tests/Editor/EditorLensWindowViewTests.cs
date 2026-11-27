@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -222,6 +223,195 @@ namespace EditorLens.Tests
             Assert.That(state.Tree.Nodes.Any(node => node.Name == "visual-tree"), Is.True);
             Assert.That(state.Tree.Nodes.Any(node => node.Name == "window-list"), Is.True);
             Assert.That(state.Target.InstanceId, Is.EqualTo(window.GetInstanceID()));
+        }
+
+        [Test]
+        public void OdinSourceSelectionShowsExistingRootsMetadataAndPersistentCacheNotice()
+        {
+            WindowSnapshot target = Window(11, "目标窗口");
+            OdinTreeSnapshot snapshot = OdinTree(target);
+            int visualCount = 0;
+            int odinCount = 0;
+            var state = new EditorLensWindowState(
+                () => WindowList(target),
+                id => { visualCount++; return NestedTree(target); },
+                id => { odinCount++; return snapshot; });
+            EditorLensWindow window = CreateWindow(state);
+            VisualElement root = window.rootVisualElement;
+            DropdownField source = root.Q<DropdownField>("tree-source");
+            TreeView tree = root.Q<TreeView>("visual-tree");
+            Assert.That(source.value, Is.EqualTo("UI Toolkit"));
+            Assert.That(root.Q<Label>("odin-cached-only").style.display.value, Is.EqualTo(DisplayStyle.None));
+            root.Q<ListView>("window-list").SetSelection(0);
+            tree.SetSelectionById(2);
+
+            ChangeDetachedField(source, "Odin 属性树");
+
+            Assert.That(visualCount, Is.EqualTo(1));
+            Assert.That(odinCount, Is.EqualTo(1));
+            Assert.That(state.SelectedNode, Is.Null);
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(root.Q<TextField>("节点 ID"), Is.Null);
+            Assert.That(tree.GetRootIds(), Is.EqualTo(new[] { 0, 3 }));
+            Assert.That(tree.GetItemDataForId<OdinPropertySnapshot>(0), Is.SameAs(snapshot.Nodes[0]));
+            Assert.That(tree.GetItemDataForId<OdinPropertySnapshot>(3), Is.SameAs(snapshot.Nodes[3]));
+            Assert.That(root.Q<Label>("tree-status").text, Does.Contain("来源 #0").And.Contain("来源 #1").And.Contain("来源 #2"));
+            Assert.That(root.Q<Label>("odin-cached-only").style.display.value, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(root.Q<Label>("odin-cached-only").text, Does.Contain("CachedOnly").And.Contain("完整性未知"));
+
+            var row = (Label)tree.makeItem();
+            tree.bindItem(row, 0);
+            Assert.That(row.text, Does.Contain("Group").And.Contain("第一棵树"));
+            tree.CollapseItem(0);
+            tree.ExpandItem(0);
+            tree.SetSelectionById(1);
+            ChangeDetachedField(root.Q<ToolbarSearchField>("window-search"), "不匹配");
+
+            Assert.That(state.SelectedOdinNode, Is.SameAs(snapshot.Nodes[1]));
+            Assert.That(root.Q<TextField>("节点 ID").value, Is.EqualTo("1"));
+            Assert.That(root.Q<TextField>("属性路径").value, Is.EqualTo("First.Value"));
+            Assert.That(root.Q<TextField>("声明值类型").value, Is.EqualTo("System.Int32"));
+            Assert.That(root.Q<TextField>("属性路径").isReadOnly, Is.True);
+            Assert.That(root.Q<TextField>("来源").value, Does.Contain("Editor #50").And.Contain("Editor #60"));
+            Assert.That(root.Q<TextField>("Layout"), Is.Null);
+            Assert.That(root.Q<TextField>("已附着 Panel"), Is.Null);
+            Assert.That(root.Q<TextField>("值"), Is.Null);
+            Assert.That(visualCount, Is.EqualTo(1));
+            Assert.That(odinCount, Is.EqualTo(1));
+
+            ChangeDetachedField(source, "UI Toolkit");
+            Assert.That(visualCount, Is.EqualTo(2));
+            Assert.That(odinCount, Is.EqualTo(1));
+            Assert.That(tree.GetItemDataForId<VisualElementSnapshot>(0).Name, Is.EqualTo("root"));
+            Assert.That(state.SelectedOdinNode, Is.Null);
+            Assert.That(root.Q<TextField>("属性路径"), Is.Null);
+            Assert.That(root.Q<TextField>("节点 ID"), Is.Null);
+            Assert.That(root.Q<Label>("odin-cached-only").style.display.value, Is.EqualTo(DisplayStyle.None));
+        }
+
+        [Test]
+        public void SelectingOdinBeforeTargetShowsCacheBoundaryWithoutCapturing()
+        {
+            WindowSnapshot target = Window(11, "目标窗口");
+            int captureCount = 0;
+            var state = new EditorLensWindowState(() => WindowList(target),
+                id => { captureCount++; return Tree(target); },
+                id => { captureCount++; return OdinTree(target); });
+            var root = CreateWindow(state).rootVisualElement;
+
+            ChangeDetachedField(root.Q<DropdownField>("tree-source"), "Odin 属性树");
+
+            Assert.That(captureCount, Is.Zero);
+            Assert.That(root.Q<Label>("tree-empty").text, Does.Contain("Odin 属性树"));
+            Assert.That(root.Q<Label>("odin-cached-only").style.display.value, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(root.Q<ToolbarButton>("refresh-tree").enabledSelf, Is.False);
+            Assert.That(root.Q<TreeView>("visual-tree").GetRootIds(), Is.Empty);
+        }
+
+        [TestCase(QueryStatus.OdinUnavailable)]
+        [TestCase(QueryStatus.UnsupportedOdinVersion)]
+        [TestCase(QueryStatus.UnsupportedTarget)]
+        [TestCase(QueryStatus.RootUnavailable)]
+        [TestCase(QueryStatus.Partial)]
+        public void OdinFailuresAndPartialSnapshotsShowStatusAlongsideCacheBoundary(QueryStatus status)
+        {
+            WindowSnapshot target = Window(11, "目标窗口");
+            var snapshot = status == QueryStatus.Partial ? OdinTree(target) : new OdinTreeSnapshot { Window = target };
+            snapshot.Status = status;
+            snapshot.IsTruncated = status == QueryStatus.Partial;
+            snapshot.Diagnostics = new[] { "本次 Odin 诊断" };
+            var state = new EditorLensWindowState(() => WindowList(target), id => Tree(target), id => snapshot);
+            var root = CreateWindow(state).rootVisualElement;
+            ChangeDetachedField(root.Q<DropdownField>("tree-source"), "Odin 属性树");
+
+            root.Q<ListView>("window-list").SetSelection(0);
+
+            Assert.That(root.Q<Label>("tree-status").text, Does.Contain(status.ToString()).And.Contain("本次 Odin 诊断"));
+            Assert.That(root.Q<Label>("tree-status").text.Contains("已截断"), Is.EqualTo(snapshot.IsTruncated));
+            Assert.That(root.Q<Label>("odin-cached-only").style.display.value, Is.EqualTo(DisplayStyle.Flex));
+            Assert.That(root.Q<Label>("tree-empty").style.display.value,
+                Is.EqualTo(snapshot.Nodes.Count == 0 ? DisplayStyle.Flex : DisplayStyle.None));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ReleasingViewDetachesHeldSourceSelectionCallback(bool destroy)
+        {
+            WindowSnapshot target = Window(11, "目标窗口");
+            int odinCount = 0;
+            var oldState = new EditorLensWindowState(() => WindowList(target), id => Tree(target),
+                id => { odinCount++; return OdinTree(target); });
+            EditorLensWindow window = CreateWindow(oldState);
+            window.rootVisualElement.Q<ListView>("window-list").SetSelection(0);
+            DropdownField oldSource = window.rootVisualElement.Q<DropdownField>("tree-source");
+            if (destroy)
+                Object.DestroyImmediate(window);
+            else
+                window.CreateView(new EditorLensWindowState(() => WindowList(target), id => Tree(target),
+                    id => { odinCount++; return OdinTree(target); }));
+
+            ChangeDetachedField(oldSource, "Odin 属性树");
+
+            Assert.That(oldState.Source, Is.EqualTo(EditorLensTreeSource.UIToolkit));
+            Assert.That(odinCount, Is.Zero);
+            if (!destroy)
+            {
+                ChangeDetachedField(window.rootVisualElement.Q<DropdownField>("tree-source"), "Odin 属性树");
+                window.rootVisualElement.Q<ListView>("window-list").SetSelection(0);
+                Assert.That(odinCount, Is.EqualTo(1));
+            }
+        }
+
+        private static void ChangeDetachedField(VisualElement element, string value)
+        {
+            // 未展示窗口没有 Panel，BaseField.value 不会发事件；显式走目标阶段分发，
+            // 仍由实际注册的回调处理，从而同时验证行为与回调解绑。
+            Assert.That(element.panel, Is.Null);
+            var field = (INotifyValueChanged<string>)element;
+            string previousValue = field.value;
+            field.SetValueWithoutNotify(value);
+            MethodInfo dispatch = typeof(CallbackEventHandler).GetMethod("HandleEventAtTargetPhase",
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(EventBase) }, null);
+            Assert.That(dispatch, Is.Not.Null, "当前 Unity 必须提供后台测试使用的目标阶段事件分发入口。");
+            using (var change = ChangeEvent<string>.GetPooled(previousValue, value))
+            {
+                change.target = element;
+                dispatch.Invoke(element, new object[] { change });
+            }
+        }
+
+        private static OdinTreeSnapshot OdinTree(WindowSnapshot target)
+        {
+            return new OdinTreeSnapshot
+            {
+                Window = target,
+                Status = QueryStatus.Success,
+                Nodes = new[]
+                {
+                    new OdinPropertySnapshot { NodeId = 0, TreeId = 0, NiceName = "第一棵树", Kind = OdinPropertyKind.Group, ChildIds = new[] { 1, 2 }, IsDataAvailable = true },
+                    new OdinPropertySnapshot { NodeId = 1, TreeId = 0, ParentId = 0, Depth = 1, Name = "Value", NiceName = "值字段", Path = "First.Value", ValueTypeName = "System.Int32", Kind = OdinPropertyKind.Value, IsDataAvailable = true },
+                    new OdinPropertySnapshot { NodeId = 2, TreeId = 0, ParentId = 0, Depth = 1, Name = "Run", Kind = OdinPropertyKind.Method, IsDataAvailable = true },
+                    new OdinPropertySnapshot { NodeId = 3, TreeId = 1, NiceName = "第二棵树", Kind = OdinPropertyKind.Group, ChildIds = new[] { 4 }, IsDataAvailable = true },
+                    new OdinPropertySnapshot { NodeId = 4, TreeId = 1, ParentId = 3, Depth = 1, Name = "Other", Kind = OdinPropertyKind.Value, IsDataAvailable = true }
+                },
+                Trees = new[]
+                {
+                    new OdinPropertyTreeSnapshot
+                    {
+                        TreeId = 0, RootNodeId = 0, Status = QueryStatus.Success,
+                        Sources = new[]
+                        {
+                            new OdinTreeSourceSnapshot { SourceIndex = 0, EditorInstanceId = 50, EditorTypeName = "Example.FirstEditor", TargetTypeName = "Example.Target" },
+                            new OdinTreeSourceSnapshot { SourceIndex = 1, EditorInstanceId = 60, EditorTypeName = "Example.SecondEditor", TargetTypeName = "Example.Target" }
+                        }
+                    },
+                    new OdinPropertyTreeSnapshot
+                    {
+                        TreeId = 1, RootNodeId = 3, Status = QueryStatus.Success,
+                        Sources = new[] { new OdinTreeSourceSnapshot { SourceIndex = 2, TargetTypeName = "Example.WindowTarget" } }
+                    }
+                }
+            };
         }
 
         private EditorLensWindow CreateWindow(EditorLensWindowState state)

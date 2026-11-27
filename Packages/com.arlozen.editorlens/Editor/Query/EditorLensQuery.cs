@@ -118,7 +118,19 @@ namespace EditorLens
             return result;
         }
 
-        private static WindowSnapshot ReadWindow(EditorWindow window, EditorWindow focusedWindow)
+        /// <summary>只读采集 OdinEditorWindow 或 Inspector 中已经创建的 Odin 属性节点。</summary>
+        public static OdinTreeSnapshot CaptureOdinTree(int windowInstanceId, TreeCaptureOptions options = null)
+        {
+            return OdinTreeCapture.CaptureWindow(windowInstanceId, options);
+        }
+
+        /// <summary>只读采集指定 OdinEditor 中已经创建的 Odin 属性节点。</summary>
+        public static OdinTreeSnapshot CaptureOdinTree(UnityEditor.Editor editor, TreeCaptureOptions options = null)
+        {
+            return OdinTreeCapture.CaptureEditor(editor, options);
+        }
+
+        internal static WindowSnapshot ReadWindow(EditorWindow window, EditorWindow focusedWindow)
         {
             GUIContent title = window.titleContent;
             return new WindowSnapshot
