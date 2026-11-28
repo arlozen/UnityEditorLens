@@ -30,13 +30,14 @@ namespace EditorLens.Tests
             windows.Clear();
         }
 
-        [Test]
-        public void WorkerThreadRequestsFailBeforeAccessingUnityTargets()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void WorkerThreadRequestsFailBeforeAccessingUnityTargets(bool requestRepaint)
         {
             var task = Task.Run(() => new[]
             {
-                EditorLensQuery.BeginIMGUITreeCapture(0),
-                EditorLensQuery.BeginIMGUITreeCapture((Editor)null)
+                EditorLensQuery.BeginIMGUITreeCapture(0, requestRepaint: requestRepaint),
+                EditorLensQuery.BeginIMGUITreeCapture((Editor)null, requestRepaint: requestRepaint)
             });
             Assert.That(task.Wait(TimeSpan.FromSeconds(5)), Is.True);
             foreach (var session in task.Result)
@@ -90,8 +91,9 @@ namespace EditorLens.Tests
             }
         }
 
-        [Test]
-        public void DirectEditorWithoutAnExistingInspectorDoesNotCreateAHost()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void DirectEditorWithoutAnExistingInspectorDoesNotCreateAHost(bool requestRepaint)
         {
             var target = new Texture2D(1, 1);
             Editor editor = null;
@@ -103,7 +105,7 @@ namespace EditorLens.Tests
                 var focus = EditorWindow.focusedWindow;
                 var selection = Selection.activeObject;
 
-                var session = Track(EditorLensQuery.BeginIMGUITreeCapture(editor));
+                var session = Track(EditorLensQuery.BeginIMGUITreeCapture(editor, requestRepaint: requestRepaint));
 
                 AssertFailure(session, QueryStatus.RootUnavailable);
                 Assert.That(session.Snapshot.RequestedEditorInstanceId, Is.EqualTo(editor.GetInstanceID()));
@@ -162,9 +164,9 @@ namespace EditorLens.Tests
             finally
             {
                 if (secondInspector)
-                    Object.DestroyImmediate(secondInspector);
+                    secondInspector.Close();
                 if (firstInspector)
-                    Object.DestroyImmediate(firstInspector);
+                    firstInspector.Close();
                 if (sharedInspector)
                     Object.DestroyImmediate(sharedInspector);
                 Object.DestroyImmediate(secondTarget);
@@ -172,8 +174,9 @@ namespace EditorLens.Tests
             }
         }
 
-        [Test]
-        public void UnshownAndDestroyedWindowsDoNotCreateRootsOrInvokeOnGUI()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void UnshownAndDestroyedWindowsDoNotCreateRootsOrInvokeOnGUI(bool requestRepaint)
         {
             var window = CreateWindow(false);
             var rootField = typeof(EditorWindow).GetField("m_UIRootElement", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -182,7 +185,8 @@ namespace EditorLens.Tests
             var focus = EditorWindow.focusedWindow;
             var selection = Selection.activeObject;
 
-            AssertFailure(Track(EditorLensQuery.BeginIMGUITreeCapture(window.GetInstanceID())), QueryStatus.RootUnavailable);
+            AssertFailure(Track(EditorLensQuery.BeginIMGUITreeCapture(window.GetInstanceID(), requestRepaint: requestRepaint)),
+                QueryStatus.RootUnavailable);
 
             Assert.That(rootField.GetValue(window), Is.Null);
             Assert.That(window.DrawCount, Is.Zero);
@@ -190,7 +194,8 @@ namespace EditorLens.Tests
             Assert.That(Selection.activeObject, Is.SameAs(selection));
             int id = window.GetInstanceID();
             Object.DestroyImmediate(window);
-            AssertFailure(Track(EditorLensQuery.BeginIMGUITreeCapture(id)), QueryStatus.WindowUnavailable);
+            AssertFailure(Track(EditorLensQuery.BeginIMGUITreeCapture(id, requestRepaint: requestRepaint)),
+                QueryStatus.WindowUnavailable);
         }
 
         [Test]
@@ -612,7 +617,7 @@ namespace EditorLens.Tests
             double deadline = EditorApplication.timeSinceStartup + 4;
             while (!first.IsCompleted && EditorApplication.timeSinceStartup < deadline)
             {
-                // 只有测试负责请求自己创建窗口的绘制，查询 API 本身不发起绘制。
+                // 默认模式不请求重绘；由测试显式请求自己创建窗口的绘制。
                 window.Repaint();
                 yield return null;
             }
@@ -635,15 +640,13 @@ namespace EditorLens.Tests
 
             string originalText = window.LabelText;
             window.LabelText = "Editor Lens 第二次绘制标签";
-            var second = Track(EditorLensQuery.BeginIMGUITreeCapture(window.GetInstanceID(), timeoutSeconds: 3));
+            var second = Track(EditorLensQuery.BeginIMGUITreeCapture(window.GetInstanceID(),
+                timeoutSeconds: 3, requestRepaint: true));
             deadline = EditorApplication.timeSinceStartup + 4;
             while (!second.IsCompleted && EditorApplication.timeSinceStartup < deadline)
-            {
-                window.Repaint();
                 yield return null;
-            }
 
-            Assert.That(second.IsCompleted, Is.True);
+            Assert.That(second.IsCompleted, Is.True, "API 的单次重绘请求应能取得新绘制记录，调用方不再请求重绘。");
             Assert.That(second.Snapshot.Status, Is.EqualTo(QueryStatus.Success), Diagnostics(second.Snapshot));
             Assert.That(second.Snapshot.Nodes.Any(node => node.Kind == IMGUIInstructionKind.Draw && node.Text == window.LabelText), Is.True);
             Assert.That(first.Snapshot.Nodes.Any(node => node.Text == originalText), Is.True);
@@ -653,6 +656,55 @@ namespace EditorLens.Tests
             Assert.That(window.ClickCount, Is.Zero);
             Assert.That(EditorWindow.focusedWindow, Is.SameAs(focus));
             Assert.That(Selection.activeObject, Is.SameAs(selection));
+        }
+
+        [UnityTest]
+        public IEnumerator RequestedRepaintCapturesTheEditorsExistingInspectorWithoutFurtherRequests()
+        {
+            RequireIsolatedBatchMode();
+            var target = new Texture2D(1, 1);
+            EditorWindow sharedInspector = null;
+            EditorWindow inspector = null;
+            try
+            {
+                // 首个 Inspector 保留共享 Tracker；被测宿主使用自己的独立 Tracker。
+                sharedInspector = (EditorWindow)ScriptableObject.CreateInstance(
+                    typeof(EditorWindow).Assembly.GetType("UnityEditor.InspectorWindow"));
+                inspector = CreateLockedInspector(target, out ActiveEditorTracker tracker);
+                Editor editor = tracker.activeEditors.Single(candidate => ReferenceEquals(candidate.target, target));
+                int[] editorIds = tracker.activeEditors.Select(candidate => candidate.GetInstanceID()).ToArray();
+                var focus = EditorWindow.focusedWindow;
+                var selection = Selection.activeObject;
+                int[] inspectorsBefore = ExistingInspectorIds();
+
+                var session = Track(EditorLensQuery.BeginIMGUITreeCapture(editor,
+                    timeoutSeconds: 3, requestRepaint: true));
+                double deadline = EditorApplication.timeSinceStartup + 4;
+                while (!session.IsCompleted && EditorApplication.timeSinceStartup < deadline)
+                    yield return null;
+
+                Assert.That(session.IsCompleted, Is.True, "Editor 重载应在一次重绘请求后完成采集，调用方不再请求重绘。");
+                Assert.That(session.Snapshot.Status, Is.EqualTo(QueryStatus.Success), Diagnostics(session.Snapshot));
+                Assert.That(session.Snapshot.Window.InstanceId, Is.EqualTo(inspector.GetInstanceID()));
+                Assert.That(session.Snapshot.RequestedEditorInstanceId, Is.EqualTo(editor.GetInstanceID()));
+                Assert.That(session.Snapshot.Nodes.Any(node => node.Kind == IMGUIInstructionKind.Draw), Is.True,
+                    "必须取得实际绘制记录，不能以成功空树证明重绘采集有效。");
+                Assert.That(session.Snapshot.CapturedAtUtc, Is.Not.Null);
+                AssertRelationships(session.Snapshot);
+                Assert.That(tracker.activeEditors.Select(candidate => candidate.GetInstanceID()), Is.EqualTo(editorIds));
+                Assert.That(tracker.isLocked, Is.True);
+                Assert.That(ExistingInspectorIds(), Is.EqualTo(inspectorsBefore));
+                Assert.That(EditorWindow.focusedWindow, Is.SameAs(focus));
+                Assert.That(Selection.activeObject, Is.SameAs(selection));
+            }
+            finally
+            {
+                if (inspector)
+                    inspector.Close();
+                if (sharedInspector)
+                    Object.DestroyImmediate(sharedInspector);
+                Object.DestroyImmediate(target);
+            }
         }
 
         private IMGUITestWindow CreateWindow(bool show)
@@ -700,9 +752,11 @@ namespace EditorLens.Tests
             Assert.That(inspectorType, Is.Not.Null);
             Assert.That(propertyEditorType, Is.Not.Null);
             var inspector = (EditorWindow)ScriptableObject.CreateInstance(inspectorType);
+            bool shown = false;
             try
             {
                 inspector.Show();
+                shown = true;
                 FieldInfo trackerField = propertyEditorType.GetField("m_Tracker",
                     BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
                 Assert.That(trackerField, Is.Not.Null);
@@ -719,7 +773,10 @@ namespace EditorLens.Tests
             }
             catch
             {
-                Object.DestroyImmediate(inspector);
+                if (shown)
+                    inspector.Close();
+                else
+                    Object.DestroyImmediate(inspector);
                 throw;
             }
         }

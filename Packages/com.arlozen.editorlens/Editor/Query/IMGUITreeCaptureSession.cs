@@ -7,8 +7,8 @@ using Object = UnityEngine.Object;
 namespace EditorLens
 {
     /// <summary>
-    /// 在 Editor 主线程等待一次自然 IMGUI 绘制。会话占用 Unity 的全局调试记录器，
-    /// 完成、超时或取消时清理；不聚焦、重绘窗口或直接调用 OnGUI。
+    /// 在 Editor 主线程等待一次 IMGUI 绘制，默认等待自然绘制，可显式请求一次重绘。
+    /// 会话占用 Unity 的全局调试记录器，完成、超时或取消时清理；不聚焦窗口或直接调用 OnGUI。
     /// </summary>
     public sealed class IMGUITreeCaptureSession : IDisposable
     {
@@ -36,7 +36,7 @@ namespace EditorLens
         public IMGUITreeSnapshot Snapshot { get; private set; }
 
         internal static IMGUITreeCaptureSession Begin(int windowInstanceId, TreeCaptureOptions options,
-            double timeoutSeconds)
+            double timeoutSeconds, bool requestRepaint)
         {
             var session = new IMGUITreeCaptureSession();
             if (!session.Prepare(options, timeoutSeconds))
@@ -54,7 +54,7 @@ namespace EditorLens
                 if (!session.target)
                     session.Fail(QueryStatus.WindowUnavailable, "未找到指定的已加载 EditorWindow：" + windowInstanceId);
                 else
-                    session.Start();
+                    session.Start(requestRepaint);
             }
             catch (Exception exception)
             {
@@ -64,7 +64,7 @@ namespace EditorLens
         }
 
         internal static IMGUITreeCaptureSession Begin(UnityEditor.Editor editor, TreeCaptureOptions options,
-            double timeoutSeconds)
+            double timeoutSeconds, bool requestRepaint)
         {
             var session = new IMGUITreeCaptureSession();
             if (!session.Prepare(options, timeoutSeconds))
@@ -104,7 +104,7 @@ namespace EditorLens
                 if (!session.target)
                     session.Fail(QueryStatus.RootUnavailable, "指定 Editor 不在已有 Inspector 的 Tracker 中；不会创建或显示宿主。");
                 else
-                    session.Start();
+                    session.Start(requestRepaint);
             }
             catch (Exception exception)
             {
@@ -134,7 +134,7 @@ namespace EditorLens
             return true;
         }
 
-        private void Start()
+        private void Start(bool requestRepaint)
         {
             Snapshot.Window = EditorLensQuery.ReadWindow(target, EditorWindow.focusedWindow);
             QueryStatus status = IMGUIReflectionAdapter.Find(out adapter, out string diagnostic);
@@ -168,6 +168,10 @@ namespace EditorLens
             {
                 starting = false;
             }
+
+            // 记录器就绪后再请求绘制；Repaint 仅发出请求，完成仍由绘制记录通知决定。
+            if (requestRepaint && !IsCompleted)
+                target.Repaint();
         }
 
         private void OnInstructionsChanged()
@@ -291,7 +295,7 @@ namespace EditorLens
         {
             if (EditorApplication.timeSinceStartup < deadline)
                 return false;
-            Fail(QueryStatus.TimedOut, "等待自然 IMGUI 绘制超时；未显示的标签、无绘制内容或缓存优化块可能无法产生记录。");
+            Fail(QueryStatus.TimedOut, "等待 IMGUI 绘制记录超时；未显示的标签、无绘制内容或缓存优化块可能无法产生记录。");
             return true;
         }
 

@@ -130,18 +130,18 @@ namespace EditorLens
             return OdinTreeCapture.CaptureEditor(editor, options);
         }
 
-        /// <summary>等待目标窗口一次自然 IMGUI 绘制；不会聚焦、重绘目标或直接执行 OnGUI。</summary>
+        /// <summary>等待目标窗口一次 IMGUI 绘制；可显式请求一次重绘，不聚焦目标或直接执行 OnGUI。</summary>
         public static IMGUITreeCaptureSession BeginIMGUITreeCapture(int windowInstanceId,
-            TreeCaptureOptions options = null, double timeoutSeconds = 2)
+            TreeCaptureOptions options = null, double timeoutSeconds = 2, bool requestRepaint = false)
         {
-            return IMGUITreeCaptureSession.Begin(windowInstanceId, options, timeoutSeconds);
+            return IMGUITreeCaptureSession.Begin(windowInstanceId, options, timeoutSeconds, requestRepaint);
         }
 
-        /// <summary>定位 Editor 已有 Inspector，采集整个宿主的记录，不保证属于此 Editor 的专属范围。</summary>
+        /// <summary>定位 Editor 已有 Inspector，可显式请求一次重绘；采集整个宿主，不保证此 Editor 的专属范围。</summary>
         public static IMGUITreeCaptureSession BeginIMGUITreeCapture(UnityEditor.Editor editor,
-            TreeCaptureOptions options = null, double timeoutSeconds = 2)
+            TreeCaptureOptions options = null, double timeoutSeconds = 2, bool requestRepaint = false)
         {
-            return IMGUITreeCaptureSession.Begin(editor, options, timeoutSeconds);
+            return IMGUITreeCaptureSession.Begin(editor, options, timeoutSeconds, requestRepaint);
         }
 
         internal static WindowSnapshot ReadWindow(EditorWindow window, EditorWindow focusedWindow)

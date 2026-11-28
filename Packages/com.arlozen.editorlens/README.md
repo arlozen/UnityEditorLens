@@ -82,16 +82,16 @@ foreach (WindowSnapshot window in windows.Windows)
 
 ## IMGUI 绘制层级快照 API
 
-`BeginIMGUITreeCapture(int windowInstanceId, TreeCaptureOptions options = null, double timeoutSeconds = 2)` 返回 `IMGUITreeCaptureSession`。它临时启用 Unity 的 IMGUI 调试记录器，等待已有宿主的一次自然绘制；`Snapshot.Status` 初始为 `Pending`，完成后 `IsCompleted` 为 true，`Snapshot` 被替换成结果快照。不要在等待期间阻塞 Editor 主线程，也不要在刚发起请求后立即用 `using` 结束会话。
+`BeginIMGUITreeCapture(int windowInstanceId, TreeCaptureOptions options = null, double timeoutSeconds = 2, bool requestRepaint = false)` 返回 `IMGUITreeCaptureSession`。它临时启用 Unity 的 IMGUI 调试记录器，默认等待已有宿主的一次自然绘制；设置 `requestRepaint: true` 时，在记录器启动后对已定位宿主调用一次公开 `Repaint()`。调用返回会话，不同步等待绘制；会话通常以 `Snapshot.Status = Pending` 返回，完成后 `IsCompleted` 为 true，`Snapshot` 被替换成结果快照。不要在等待期间阻塞 Editor 主线程，也不要在刚发起请求后立即用 `using` 结束会话。
 
-以下示例中的方法可放入调用方自己的 Editor 类，在主线程调用：
+以下示例中的方法可放入调用方自己的 Editor 类，在主线程调用。示例显式请求一次宿主重绘；省略 `requestRepaint` 参数则只等待自然绘制：
 
 ```csharp
 public static void CaptureIMGUI(int windowInstanceId)
 {
     var session = EditorLens.EditorLensQuery.BeginIMGUITreeCapture(windowInstanceId,
         new EditorLens.TreeCaptureOptions { MaxNodes = 10000, MaxDepth = 128 },
-        timeoutSeconds: 2);
+        timeoutSeconds: 2, requestRepaint: true);
 
     void ReadResult()
     {
@@ -114,7 +114,7 @@ public static void CaptureIMGUI(int windowInstanceId)
 }
 ```
 
-已有 `UnityEditor.Editor` 可传给同名重载。该入口仅读取已有 Inspector 的 Tracker 来定位宿主，不创建 Editor 或 Inspector；找不到宿主时返回 `RootUnavailable`。**记录范围始终是整个宿主窗口**，可能包含 Inspector 标题、其他 Editor 和宿主控件，不能按请求的 Editor 实例可靠过滤；`RequestedEditorInstanceId` 只记录请求来源。
+已有 `UnityEditor.Editor` 可传给同名重载；两个重载都提供默认关闭的 `requestRepaint` 参数。该入口仅读取已有 Inspector 的 Tracker 来定位宿主，不创建 Editor 或 Inspector；找不到宿主时返回 `RootUnavailable`。**记录范围始终是整个宿主窗口**，可能包含 Inspector 标题、其他 Editor 和宿主控件，不能按请求的 Editor 实例可靠过滤；`RequestedEditorInstanceId` 只记录请求来源。
 
 - `Nodes` 按绘制记录顺序排列，依据 Unity 调试器的 `RecordedLevel` 缩进建立关系：此前最近且缩进更浅的记录作为父节点，同缩进记录为兄弟；布局项也可有绘制子项。原生 begin/end 不保证成对，不据此推断嵌套，也不补造缩进跳级中的祖先。多个顶层节点保持多个根，`Depth` 表示已记录父链的深度；`InstructionIndex` 和 `RecordedLevel` 保留原始位置与缩进。此关系表示绘制记录层级，不是业务控件对象关系。
 - 节点记录指令种类、启用状态和矩形；Draw 可含实际绘制文本、Tooltip、样式名称及可见矩形，命名控件可含名称／临时控件 ID，属性边界可含属性路径与目标类型名。不会读取业务值、执行任意 getter 或返回 GUIContent／GUIStyle 等实时引用。
@@ -122,7 +122,7 @@ public static void CaptureIMGUI(int windowInstanceId)
 - `RecordedInstructionCount` 为原始记录数，每条记录均可形成一个节点，包括原生确实提供的结束标记。节点预算限制输出节点数量，深度预算限制已记录父链的深度；仅预算实际省略记录时 `IsTruncated` 为 true，与局部读取失败的 `Partial` 独立。
 - **`IsCompleteControlTree` 始终为 false。** 绘制调用与业务控件不是一一对应关系，未绘制分支和缓存优化块可能缺失，不强制刷新这些块。取得含 Draw 的记录后才完成采集；无绘制记录时会等待并最终超时，不返回成功空树。
 - 所有会话操作在 Editor 主线程调用。`Cancel()` 取消未完成会话；后台取消返回 `WrongThread` 而不改变会话，后台 `Dispose()` 抛出 `InvalidOperationException`。完成、超时、取消、目标失效、程序集重载或退出时解除本包订阅；已返回的快照作为历史数据继续有效。
-- 默认超时 2 秒，允许 `(0, 30]` 秒。采集不聚焦窗口、不切标签、不请求目标 Repaint、不直接调用 OnGUI。未展示窗口／非当前停靠标签没有可采集宿主时直接返回诊断；等待期间宿主或标签变化则中止。
+- 默认超时 2 秒，允许 `(0, 30]` 秒。默认不请求目标 Repaint；`requestRepaint: true` 仅请求一次，不自动重试。两种模式都不聚焦窗口、不切标签、不直接调用 OnGUI。重绘请求不代表已经执行绘制，仍需异步等待包含 Draw 的记录；不保证 Unity 后台或最小化时能在超时前完成。未展示窗口／非当前停靠标签没有可采集宿主时直接返回诊断；等待期间宿主或标签变化则中止。
 
 记录器是 Unity 的全局内部能力，每次只允许本包一个会话。已有官方 IMGUI Debugger 或已知托管订阅者时返回 `Busy`，不会抢占。观察到外部启停或切换调试目标时返回 `CaptureInterrupted`，不停止外部接管的记录器。Unity 没有提供查询原生记录器当前所有者的接口；**无法检测早已运行且没有托管订阅者的任意第三方内部采集器**，不保证与此类采集器共存。此限制及成员适配隔离在兼容层中，依据 [Unity 2022.3 内部记录接口源码](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/GUIDebugger/GUIViewDebuggerHelper.bindings.cs)。目前仅接受 Unity 2022.3 系列，实际验证基线为 2022.3.62f3。调试窗口仍提供 UI Toolkit／Odin 两种来源，IMGUI 仅作为 API 提供。
 
@@ -187,14 +187,14 @@ foreach (OdinPropertySnapshot node in snapshot.Nodes)
 | `UnsupportedOdinVersion` | Odin 内部成员与适配要求不兼容 |
 | `UnsupportedTarget` | 目标不属于支持的 Odin 入口，或 IMGUI Editor 请求无法唯一确定宿主 |
 | `EditorUnavailable` | 直接查询的 Editor 已失效 |
-| `Pending` | IMGUI 会话正在等待自然绘制 |
+| `Pending` | IMGUI 会话正在等待目标绘制记录 |
 | `Busy` | 已有本包会话、官方 IMGUI Debugger 或已知记录订阅者 |
 | `TimedOut` | 在限时内未取得目标的绘制记录 |
 | `Cancelled` | IMGUI 会话被取消，或因程序集重载／退出而清理 |
 | `CaptureInterrupted` | 调试记录器被外部启停／接管，或宿主、标签、Editor 归属发生变化 |
 | `Failed` | 整体查询失败，原因见诊断 |
 
-调用入口先检查线程，再访问 Unity 对象。查询不聚焦窗口、不切换标签、不改变 Selection 或控件值，不创建 UI、不自动刷新。同步查询不缓存实时对象；IMGUI 会话在有限等待期间持有目标并订阅事件，结束时释放引用及订阅。
+调用入口先检查线程，再访问 Unity 对象。查询不聚焦窗口、不切换标签、不改变 Selection 或控件值，不创建 UI、不定时刷新；IMGUI 仅在显式启用 `requestRepaint` 时请求一次已有宿主重绘。同步查询不缓存实时对象；IMGUI 会话在有限等待期间持有目标并订阅事件，结束时释放引用及订阅。
 
 Unity 2022.3 的公开 `rootVisualElement` getter 会创建根并可能初始化 Overlay，因此本包以内部兼容层仅读取 `EditorWindow.m_UIRootElement`。字段不兼容时不回退到公开 getter。这个内部结构依赖是当前版本限制，依据 [Unity 2022.3 官方源码](https://github.com/Unity-Technologies/UnityCsReference/blob/2022.3/Editor/Mono/EditorWindow.cs)。
 

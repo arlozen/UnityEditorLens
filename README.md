@@ -9,7 +9,7 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 - `EditorLensQuery.EnumerateWindows()`：枚举已加载的 `EditorWindow`，包含未聚焦和未展示实例。
 - `EditorLensQuery.CaptureTree(instanceId)`：采集窗口已有的 UI Toolkit 物理元素树，包含基础状态、文本与常用标量值。
 - `EditorLensQuery.CaptureOdinTree(instanceId)` / `CaptureOdinTree(editor)`：可选采集 OdinEditorWindow、Inspector 内 OdinEditor 或指定 OdinEditor 的已有属性树缓存，返回结构与元数据。
-- `EditorLensQuery.BeginIMGUITreeCapture(instanceId)` / `BeginIMGUITreeCapture(editor)`：以可取消、限时的会话等待一次自然 IMGUI 绘制，返回布局、裁剪和属性嵌套中的绘制记录快照；Editor 重载的范围为其整个已有 Inspector 宿主。
+- `EditorLensQuery.BeginIMGUITreeCapture(instanceId)` / `BeginIMGUITreeCapture(editor)`：以可取消、限时的会话默认等待一次自然 IMGUI 绘制；可通过 `requestRepaint: true` 在记录器启动后请求一次已有宿主重绘，仍异步等待结果。返回布局、裁剪和属性嵌套中的绘制记录快照；Editor 重载的范围为其整个已有 Inspector 宿主。
 - 查询结果为脱离实时对象的历史快照，带有状态、诊断及截断信息；必须从 Unity 主线程调用。
 - `Tools/Editor Lens/Analysis Window`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持窗口搜索及 UI Toolkit／Odin 属性树来源切换。
 
@@ -17,7 +17,7 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 
 树展示保留真实层级，标记 IMGUI 边界、截断和数据读取失败；窗口尚未创建 UI Toolkit 根时显示诊断，不创建目标根。控件树搜索、定时刷新、JSON 导出和外部调用桥接尚未实现。完整操作说明、调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
 
-Odin 支持采用可选反射适配，生产包无 Sirenix 编译引用或包依赖；当前适配基线为 Odin 4.0.2.4。仅遍历已实例化缓存，返回 `CachedOnly`，不承诺完整业务树，不读取业务值或计算动态状态。IMGUI API 独立于调试窗口视图，基于 Unity 2022.3 内部全局记录器，不直接调用 OnGUI、不聚焦或重绘目标；记录不是完整持久控件树。运行时游戏 UI、控件操作及截图尚未实现。
+Odin 支持采用可选反射适配，生产包无 Sirenix 编译引用或包依赖；当前适配基线为 Odin 4.0.2.4。仅遍历已实例化缓存，返回 `CachedOnly`，不承诺完整业务树，不读取业务值或计算动态状态。IMGUI API 独立于调试窗口视图，基于 Unity 2022.3 内部全局记录器，默认不请求重绘，可显式请求单次 Repaint；不直接调用 OnGUI、不聚焦或切换目标标签，不保证 Unity 最小化时完成；记录不是完整持久控件树。运行时游戏 UI、控件操作及截图尚未实现。
 
 ## 工程与分发包
 

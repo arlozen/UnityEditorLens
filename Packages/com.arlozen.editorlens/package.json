@@ -2,7 +2,7 @@
   "name": "com.arlozen.editorlens",
   "version": "0.3.0",
   "displayName": "Editor Lens",
-  "description": "独立的 Unity Editor 检查工具，提供窗口枚举、UI Toolkit 物理树、可选 Odin 属性缓存及显式 IMGUI 绘制层级快照 API，以及窗口搜索、树来源切换和节点详情展示。",
+  "description": "独立的 Unity Editor 检查工具，提供窗口枚举、UI Toolkit 物理树、可选 Odin 属性缓存及支持可选单次重绘的显式 IMGUI 绘制层级快照 API，以及窗口搜索、树来源切换和节点详情展示。",
   "unity": "2022.3",
   "author": {
     "name": "arlozen"
