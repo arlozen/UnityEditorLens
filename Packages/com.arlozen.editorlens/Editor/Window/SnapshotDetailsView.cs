@@ -19,7 +19,7 @@ namespace EditorLens
             Add(nodeFields);
         }
 
-        internal void Show(WindowSnapshot window, VisualElementSnapshot node)
+        internal void Show(WindowSnapshot window, UIToolkitElementSnapshot node)
         {
             ShowWindow(window);
             Heading(nodeFields, "选中节点详情");

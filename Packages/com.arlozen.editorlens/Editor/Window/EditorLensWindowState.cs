@@ -8,14 +8,14 @@ namespace EditorLens
     internal sealed class EditorLensWindowState
     {
         private readonly Func<WindowListSnapshot> enumerate;
-        private readonly Func<int, VisualTreeSnapshot> capture;
+        private readonly Func<int, UIToolkitTreeSnapshot> capture;
         private readonly Func<int, OdinTreeSnapshot> captureOdin;
         private readonly List<WindowSnapshot> visibleWindows = new List<WindowSnapshot>();
 
         internal EditorLensWindowState()
-            : this(EditorLensQuery.EnumerateWindows, id => EditorLensQuery.CaptureTree(id)) { }
+            : this(EditorLensQuery.EnumerateWindows, id => EditorLensQuery.CaptureUIToolkitTree(id)) { }
 
-        internal EditorLensWindowState(Func<WindowListSnapshot> enumerate, Func<int, VisualTreeSnapshot> capture,
+        internal EditorLensWindowState(Func<WindowListSnapshot> enumerate, Func<int, UIToolkitTreeSnapshot> capture,
             Func<int, OdinTreeSnapshot> captureOdin = null)
         {
             this.enumerate = enumerate ?? throw new ArgumentNullException(nameof(enumerate));
@@ -24,12 +24,12 @@ namespace EditorLens
         }
 
         internal WindowListSnapshot WindowList { get; private set; }
-        internal VisualTreeSnapshot Tree { get; private set; }
+        internal UIToolkitTreeSnapshot Tree { get; private set; }
         internal OdinTreeSnapshot OdinTree { get; private set; }
         internal EditorLensTreeSource Source { get; private set; }
         internal object CurrentSnapshot => Source == EditorLensTreeSource.Odin ? (object)OdinTree : Tree;
         internal WindowSnapshot Target { get; private set; }
-        internal VisualElementSnapshot SelectedNode { get; private set; }
+        internal UIToolkitElementSnapshot SelectedNode { get; private set; }
         internal OdinPropertySnapshot SelectedOdinNode { get; private set; }
         internal string SearchText { get; private set; } = string.Empty;
         internal string SelectionNotice { get; private set; } = string.Empty;
@@ -128,7 +128,7 @@ namespace EditorLens
             if (Tree == null)
                 return;
 
-            foreach (VisualElementSnapshot node in Tree.Nodes)
+            foreach (UIToolkitElementSnapshot node in Tree.Nodes)
             {
                 if (node.NodeId == nodeId.Value)
                 {

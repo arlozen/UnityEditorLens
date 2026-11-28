@@ -38,7 +38,7 @@ namespace EditorLens
                 + window.InstanceId.ToString(CultureInfo.InvariantCulture);
         }
 
-        internal static string NodeRow(VisualElementSnapshot node)
+        internal static string NodeRow(UIToolkitElementSnapshot node)
         {
             if (node == null)
                 return "节点数据不可用";
@@ -55,28 +55,28 @@ namespace EditorLens
             return text.ToString();
         }
 
-        internal static List<TreeViewItemData<VisualElementSnapshot>> BuildTree(VisualTreeSnapshot snapshot)
+        internal static List<TreeViewItemData<UIToolkitElementSnapshot>> BuildTree(UIToolkitTreeSnapshot snapshot)
         {
-            var roots = new List<TreeViewItemData<VisualElementSnapshot>>();
+            var roots = new List<TreeViewItemData<UIToolkitElementSnapshot>>();
             if (snapshot == null || snapshot.Nodes == null)
                 return roots;
 
             // 查询快照采用深度优先顺序，倒序构建可避免递归并保证子项先于父项生成。
-            var items = new Dictionary<int, TreeViewItemData<VisualElementSnapshot>>();
+            var items = new Dictionary<int, TreeViewItemData<UIToolkitElementSnapshot>>();
             for (int index = snapshot.Nodes.Count - 1; index >= 0; index--)
             {
-                VisualElementSnapshot node = snapshot.Nodes[index];
-                var children = new List<TreeViewItemData<VisualElementSnapshot>>(node.ChildIds.Count);
+                UIToolkitElementSnapshot node = snapshot.Nodes[index];
+                var children = new List<TreeViewItemData<UIToolkitElementSnapshot>>(node.ChildIds.Count);
                 foreach (int childId in node.ChildIds)
                 {
-                    if (items.TryGetValue(childId, out TreeViewItemData<VisualElementSnapshot> child))
+                    if (items.TryGetValue(childId, out TreeViewItemData<UIToolkitElementSnapshot> child))
                         children.Add(child);
                 }
 
-                items[node.NodeId] = new TreeViewItemData<VisualElementSnapshot>(node.NodeId, node, children);
+                items[node.NodeId] = new TreeViewItemData<UIToolkitElementSnapshot>(node.NodeId, node, children);
             }
 
-            foreach (VisualElementSnapshot node in snapshot.Nodes)
+            foreach (UIToolkitElementSnapshot node in snapshot.Nodes)
             {
                 if (!node.ParentId.HasValue)
                     roots.Add(items[node.NodeId]);
@@ -175,7 +175,7 @@ namespace EditorLens
             return text.ToString();
         }
 
-        internal static string TreeStatus(VisualTreeSnapshot snapshot)
+        internal static string TreeStatus(UIToolkitTreeSnapshot snapshot)
         {
             if (snapshot == null)
                 return "请选择窗口以采集控件树。";
@@ -200,17 +200,17 @@ namespace EditorLens
             return text;
         }
 
-        internal static string ContentText(ElementContentSnapshot content)
+        internal static string ContentText(UIToolkitContentSnapshot content)
         {
             return ContentValueText(content, true);
         }
 
-        internal static string ContentValue(ElementContentSnapshot content)
+        internal static string ContentValue(UIToolkitContentSnapshot content)
         {
             return ContentValueText(content, false);
         }
 
-        private static string ContentValueText(ElementContentSnapshot content, bool useText)
+        private static string ContentValueText(UIToolkitContentSnapshot content, bool useText)
         {
             if (content == null)
                 return "未采集";

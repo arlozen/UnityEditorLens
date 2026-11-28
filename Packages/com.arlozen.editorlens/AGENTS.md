@@ -15,6 +15,15 @@
 - 返回结果明确快照和节点标识的有效期，不伪造未实例化或不支持解析的内容。
 - 包内文档与资源随包复制后仍应自包含；不引用包目录之外的开发指南作为必要使用条件。
 
+## 目录与命名
+
+- `Editor/Query/EditorLensQuery.cs` 是公开转发入口；实现与快照按职责放在 `Query/Common`、`Query/Windows`、`Query/UIToolkit`、`Query/Odin` 和 `Query/IMGUI`。
+- `Query/Common` 只容纳已被多个后端共用的查询状态、采集预算及主线程检查；窗口枚举、窗口信息与已有 Inspector 访问归入 `Query/Windows`，后端不反向依赖公开入口实现。
+- UI Toolkit 专属类型使用 `UIToolkit` 前缀；入口为 `CaptureUIToolkitTree`。旧 `CaptureTree` 仅作为带过时提示的兼容转发，不在新调用中使用。
+- 后端数据与实现放在同一能力目录；目录分组不增加生产程序集，公开命名空间保持 `EditorLens`。
+- 调试窗口、状态与展示代码放在 `Editor/Window`；不因调试界面使用 UI Toolkit 而归入查询后端。
+- 常规测试在 `Tests/Editor` 下按 `Windows`、`UIToolkit`、`Odin`、`IMGUI`、`Window` 镜像分组。直接引用 Sirenix 的测试保留在独立 `Tests/Odin` 程序集中。
+
 ## 资源与验证
 
 - Unity 生成 .meta，移动资源时保留原 GUID；不手工修改自动生成的工程文件。

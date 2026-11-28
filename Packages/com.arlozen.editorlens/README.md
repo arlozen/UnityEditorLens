@@ -34,6 +34,49 @@ Editor Lens 0.3.0 提供 UI Toolkit 调试窗口、同步只读的窗口／UI To
 
 窗口、树和节点详情都是历史快照，不会随着目标变化自动更新。窗口关闭或程序集重载后应重新枚举；节点 ID 只在本次树快照内有效。树默认最多采集 10,000 个节点、深度 128，隐藏、禁用和未附着 panel 的已有元素仍保留。`RootUnavailable` 表示目标根尚未创建，不是成功空树，也不能据此判断窗口仅使用 IMGUI；调试窗口不会为查询创建目标根、聚焦目标窗口或切换目标标签。`IMGUIContainer` 仅保留已有 UI Toolkit 层级和边界标记，不解析内部 IMGUI 控件，也不补造虚拟列表未实例化的行。
 
+## API 命名与迁移
+
+查询统一通过 `EditorLensQuery` 调用：窗口枚举使用 `EnumerateWindows`，UI Toolkit 和 Odin 同步采集分别使用 `CaptureUIToolkitTree`、`CaptureOdinTree`；IMGUI 使用 `BeginIMGUITreeCapture` 返回限时采集会话。三种后端分别表示物理元素树、已有属性缓存和绘制指令层级，不共享节点类型。
+
+UI Toolkit 专属公开类型采用 `UIToolkit` 前缀，命名空间仍为 `EditorLens`，程序集仍为 `EditorLens.Editor`：
+
+| 旧名称 | 当前名称 |
+| --- | --- |
+| `EditorLensQuery.CaptureTree` | `EditorLensQuery.CaptureUIToolkitTree` |
+| `VisualTreeSnapshot` | `UIToolkitTreeSnapshot` |
+| `VisualElementSnapshot` | `UIToolkitElementSnapshot` |
+| `ElementContentSnapshot` | `UIToolkitContentSnapshot` |
+
+`CaptureTree` 暂时保留为带 `[Obsolete]` 提示的转发入口，参数及采集行为相同，返回类型为 `UIToolkitTreeSnapshot`。使用 `var` 的旧调用可继续编译并获得迁移提示；显式使用旧类型名的调用方必须更新声明并重新编译。旧快照类型名不再提供，不保证旧二进制调用兼容。
+
+`WindowSnapshot`、`WindowListSnapshot`、`QueryStatus` 和 `TreeCaptureOptions` 保持现名。`TreeCaptureOptions` 仅保存三种后端共用的节点数与深度限制，IMGUI 超时和重绘选项仍由会话入口接收。
+
+## 包目录
+
+```text
+Editor/
+├─ EditorLens.Editor.asmdef
+├─ AssemblyInfo.cs
+├─ Query/
+│  ├─ EditorLensQuery.cs       公开查询入口
+│  ├─ Common/                 查询状态、共享预算及主线程检查
+│  ├─ Windows/                窗口枚举、窗口快照及已有 Inspector 访问
+│  ├─ UIToolkit/              物理元素树采集、内容读取与快照
+│  ├─ Odin/                   属性缓存采集、快照与可选反射适配
+│  └─ IMGUI/                  绘制记录会话、快照与内部记录器适配
+└─ Window/                    调试窗口、交互状态与快照展示
+Tests/
+├─ Editor/                    EditorLens.Tests 程序集
+│  ├─ Windows/
+│  ├─ UIToolkit/
+│  ├─ Odin/                   不引用 Sirenix 的边界测试
+│  ├─ IMGUI/
+│  └─ Window/
+└─ Odin/                      直接引用 Sirenix 的可选测试程序集
+```
+
+所有生产代码仍属于同一个仅限 Editor 的程序集。各后端的快照和实现按能力放在一起，查询代码不依赖调试窗口；目录归属与维护约束见包内 [AGENTS.md](AGENTS.md)。
+
 ## C# 查询示例
 
 以下代码可放在调用方自己的 Editor 方法中执行：
@@ -50,7 +93,7 @@ if (windows.Status != QueryStatus.Success)
 foreach (WindowSnapshot window in windows.Windows)
 {
     Debug.Log($"{window.InstanceId}: {window.TypeName} / {window.Title}");
-    VisualTreeSnapshot tree = EditorLensQuery.CaptureTree(window.InstanceId,
+    UIToolkitTreeSnapshot tree = EditorLensQuery.CaptureUIToolkitTree(window.InstanceId,
         new TreeCaptureOptions { MaxNodes = 10000, MaxDepth = 128 });
 
     if (tree.Status != QueryStatus.Success)
@@ -58,7 +101,7 @@ foreach (WindowSnapshot window in windows.Windows)
             Debug.LogWarning(diagnostic);
 
     Debug.Log($"状态={tree.Status}，节点数={tree.Nodes.Count}，截断={tree.IsTruncated}");
-    foreach (VisualElementSnapshot node in tree.Nodes)
+    foreach (UIToolkitElementSnapshot node in tree.Nodes)
         Debug.Log($"{node.NodeId} parent={node.ParentId} {node.TypeName} name={node.Name} "
             + $"text={node.Content.Text} value={node.Content.Value}");
 }
@@ -68,7 +111,7 @@ foreach (WindowSnapshot window in windows.Windows)
 
 `EnumerateWindows()` 使用 `Resources.FindObjectsOfTypeAll<EditorWindow>()`，按实例 ID 排序。结果包含全部已加载实例（也可能尚未展示），记录类型全名、标题、位置、焦点、停靠及最大化状态；不枚举系统原生对话框等非 `EditorWindow` 界面。
 
-`CaptureTree(int windowInstanceId, TreeCaptureOptions options = null)` 从窗口已经存在的物理根开始，按深度优先顺序采集真实子层级，保留兄弟顺序。节点包含：
+`CaptureUIToolkitTree(int windowInstanceId, TreeCaptureOptions options = null)` 从窗口已经存在的物理根开始，按深度优先顺序采集真实子层级，保留兄弟顺序。节点包含：
 
 - 快照内 ID、父 ID、子 ID 列表及深度；根 ID 为 0，父 ID 为 null，根深度为 0。
 - 类型、`name`、class、局部 `Layout`、`WorldBound`、显示及启用状态、panel 附着状态。

@@ -173,7 +173,7 @@ namespace EditorLens
             }
             else
             {
-                VisualElementSnapshot node = tree.GetItemDataForIndex<VisualElementSnapshot>(index);
+                UIToolkitElementSnapshot node = tree.GetItemDataForIndex<UIToolkitElementSnapshot>(index);
                 label.text = SnapshotPresentation.NodeRow(node);
                 label.tooltip = node.TypeName;
             }
@@ -214,7 +214,7 @@ namespace EditorLens
                 return;
             int? id = null;
             foreach (object item in selection)
-                if (item is VisualElementSnapshot node)
+                if (item is UIToolkitElementSnapshot node)
                 {
                     id = node.NodeId;
                     break;
