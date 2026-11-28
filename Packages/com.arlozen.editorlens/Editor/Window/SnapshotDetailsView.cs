@@ -86,6 +86,46 @@ namespace EditorLens
                     }
         }
 
+        internal void ShowIMGUI(WindowSnapshot window, IMGUIInstructionSnapshot node)
+        {
+            ShowWindow(window);
+            Heading(nodeFields, "选中绘制指令详情");
+            if (node == null)
+            {
+                nodeFields.Add(new Label("请选择 IMGUI 绘制树中的节点。"));
+                return;
+            }
+
+            Field(nodeFields, "节点 ID", node.NodeId.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "父节点 ID", node.ParentId?.ToString(CultureInfo.InvariantCulture) ?? "根节点");
+            Field(nodeFields, "深度", node.Depth.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "指令索引", node.InstructionIndex.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "原始记录缩进", node.RecordedLevel.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "指令种类", node.Kind.ToString());
+            Field(nodeFields, "数据可用", node.IsDataAvailable.ToString());
+            Field(nodeFields, "节点诊断", node.Diagnostic);
+            Field(nodeFields, "子项未完整采集", node.HasUncapturedChildren.ToString());
+
+            const string unavailable = "未采集，详见节点诊断";
+            Field(nodeFields, "Rect / unclippedRect", node.IsDataAvailable
+                ? SnapshotPresentation.IMGUIRectText(node.Rect) : unavailable);
+            Field(nodeFields, "VisibleRect / visibleRect", !node.IsDataAvailable ? unavailable
+                : node.VisibleRect.HasValue ? SnapshotPresentation.IMGUIRectText(node.VisibleRect.Value) : null);
+            Field(nodeFields, "启用", node.IsDataAvailable ? node.Enabled.ToString() : unavailable);
+            Field(nodeFields, "文本", IMGUIText(node.Text));
+            Field(nodeFields, "Tooltip", IMGUIText(node.Tooltip));
+            Field(nodeFields, "样式名称", IMGUIText(node.StyleName));
+            Field(nodeFields, "控件名称", IMGUIText(node.Name));
+            Field(nodeFields, "控件 ID", node.ControlId?.ToString(CultureInfo.InvariantCulture));
+            Field(nodeFields, "属性路径", IMGUIText(node.PropertyPath));
+            Field(nodeFields, "属性目标类型", IMGUIText(node.PropertyTargetTypeName));
+        }
+
+        private static string IMGUIText(string value)
+        {
+            return value == string.Empty ? "\"\"" : value;
+        }
+
         private void ShowWindow(WindowSnapshot window)
         {
             windowFields.Clear();

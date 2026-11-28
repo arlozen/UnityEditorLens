@@ -3,6 +3,7 @@ namespace EditorLens
     internal enum EditorLensTreeSource
     {
         UIToolkit,
-        Odin
+        Odin,
+        IMGUI
     }
 }

@@ -11,13 +11,13 @@ Editor Lens 是一个独立的 Unity Editor 检查工具项目，目标是通过
 - `EditorLensQuery.CaptureOdinTree(instanceId)` / `CaptureOdinTree(editor)`：可选采集 OdinEditorWindow、Inspector 内 OdinEditor 或指定 OdinEditor 的已有属性树缓存，返回结构与元数据。
 - `EditorLensQuery.BeginIMGUITreeCapture(instanceId)` / `BeginIMGUITreeCapture(editor)`：以可取消、限时的会话默认等待一次自然 IMGUI 绘制；可通过 `requestRepaint: true` 在记录器启动后请求一次已有宿主重绘，仍异步等待结果。返回布局、裁剪和属性嵌套中的绘制记录快照；Editor 重载的范围为其整个已有 Inspector 宿主。
 - 查询结果为脱离实时对象的历史快照，带有状态、诊断及截断信息；必须从 Unity 主线程调用。
-- `Tools/Editor Lens/Analysis Window`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持窗口搜索及 UI Toolkit／Odin 属性树来源切换。
+- `Tools/Editor Lens/Analysis Window`：以可调整宽度的三栏展示窗口列表、控件树和节点详情，支持窗口搜索及 UI Toolkit／Odin 属性树／IMGUI 绘制树来源切换。
 
-打开调试窗口时枚举一次已加载窗口，选择目标时采集一次控件树；之后通过“刷新窗口列表”和“刷新控件树”手动更新。刷新列表会保留仍存在的目标及其树快照，不自动重新采集树；列表搜索也不触发查询。节点详情中的文本、值、布局和状态均来自本次历史快照。
+打开调试窗口时枚举一次已加载窗口，默认来源为 UI Toolkit，选择目标时按当前来源采集一次树；之后通过“刷新窗口列表”和“刷新控件树”手动更新。IMGUI 绘制树每次选择目标或刷新控件树均请求一次宿主重绘，最多异步等待 2 秒；等待时显示 `Pending`，完成后展示快照或错误诊断，不自动重试。切换来源、目标或重新刷新会释放旧会话。刷新列表会保留仍存在的目标及其树快照，不自动重新采集树；列表搜索也不触发查询。节点详情中的文本、值、布局和状态均来自本次历史快照。
 
 树展示保留真实层级，标记 IMGUI 边界、截断和数据读取失败；窗口尚未创建 UI Toolkit 根时显示诊断，不创建目标根。控件树搜索、定时刷新、JSON 导出和外部调用桥接尚未实现。完整操作说明、API 命名迁移、目录结构、调用示例、类型支持和有效期约定见[包内 README](Packages/com.arlozen.editorlens/README.md)。
 
-Odin 支持采用可选反射适配，生产包无 Sirenix 编译引用或包依赖；当前适配基线为 Odin 4.0.2.4。仅遍历已实例化缓存，返回 `CachedOnly`，不承诺完整业务树，不读取业务值或计算动态状态。IMGUI API 独立于调试窗口视图，基于 Unity 2022.3 内部全局记录器，默认不请求重绘，可显式请求单次 Repaint；不直接调用 OnGUI、不聚焦或切换目标标签，不保证 Unity 最小化时完成；记录不是完整持久控件树。运行时游戏 UI、控件操作及截图尚未实现。
+Odin 支持采用可选反射适配，生产包无 Sirenix 编译引用或包依赖；当前适配基线为 Odin 4.0.2.4。仅遍历已实例化缓存，返回 `CachedOnly`，不承诺完整业务树，不读取业务值或计算动态状态。IMGUI 绘制树和 API 共用 Unity 2022.3 内部全局记录器，展示整个宿主一次绘制的历史指令层级及只读节点详情，不是完整持久控件树。API 默认不请求重绘，可显式请求单次 Repaint；窗口视图固定请求一次。两种入口都不直接调用 OnGUI、不聚焦或切换目标标签，不保证后台、最小化或隐藏标签能在超时前产生记录。运行时游戏 UI、控件操作及截图尚未实现。
 
 ## 工程与分发包
 

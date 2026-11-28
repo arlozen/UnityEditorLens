@@ -13,6 +13,9 @@ namespace EditorLens
         internal const string OdinCachedOnlyNotice =
             "CachedOnly：仅遍历已缓存的 Odin 属性，完整性未知；不初始化未缓存子项。属性树是逻辑结构，不代表 IMGUI 实际控件或可见布局，不读取属性值。";
 
+        internal const string IMGUIDrawingNotice =
+            "IMGUI 绘制树是整个宿主一次绘制的历史记录，非完整持久控件树；层级来自绘制指令缩进，节点 ID 仅在本次快照内有效。";
+
         internal static string ShortTypeName(string typeName)
         {
             if (string.IsNullOrEmpty(typeName))
@@ -97,6 +100,67 @@ namespace EditorLens
                 text.Append("  [缓存子项已省略]");
             if (!node.IsDataAvailable)
                 text.Append("  [数据不可用]");
+            return text.ToString();
+        }
+
+        internal static string IMGUINodeRow(IMGUIInstructionSnapshot node)
+        {
+            if (node == null)
+                return "节点数据不可用";
+
+            var text = new StringBuilder(node.Kind.ToString());
+            string title = !string.IsNullOrEmpty(node.Text) ? node.Text
+                : !string.IsNullOrEmpty(node.Name) ? node.Name : node.PropertyPath;
+            if (!string.IsNullOrEmpty(title))
+                text.Append("  ").Append(SingleLine(title));
+            if (node.HasUncapturedChildren)
+                text.Append("  [子项未完整采集]");
+            if (!node.IsDataAvailable)
+                text.Append("  [数据不可用]");
+            return text.ToString();
+        }
+
+        internal static List<TreeViewItemData<IMGUIInstructionSnapshot>> BuildIMGUITree(IMGUITreeSnapshot snapshot)
+        {
+            var roots = new List<TreeViewItemData<IMGUIInstructionSnapshot>>();
+            if (snapshot == null)
+                return roots;
+
+            // 绘制记录按父项先于子项排列，倒序构建可保留原始顺序且无需递归。
+            var items = new Dictionary<int, TreeViewItemData<IMGUIInstructionSnapshot>>();
+            for (int index = snapshot.Nodes.Count - 1; index >= 0; index--)
+            {
+                IMGUIInstructionSnapshot node = snapshot.Nodes[index];
+                var children = new List<TreeViewItemData<IMGUIInstructionSnapshot>>(node.ChildIds.Count);
+                foreach (int childId in node.ChildIds)
+                    if (items.TryGetValue(childId, out TreeViewItemData<IMGUIInstructionSnapshot> child))
+                        children.Add(child);
+
+                items[node.NodeId] = new TreeViewItemData<IMGUIInstructionSnapshot>(node.NodeId, node, children);
+            }
+
+            foreach (IMGUIInstructionSnapshot node in snapshot.Nodes)
+                if (!node.ParentId.HasValue)
+                    roots.Add(items[node.NodeId]);
+            return roots;
+        }
+
+        internal static string IMGUITreeStatus(IMGUITreeSnapshot snapshot)
+        {
+            if (snapshot == null)
+                return "请选择窗口以采集 IMGUI 绘制树。";
+
+            var text = new StringBuilder("状态：").Append(snapshot.Status)
+                .Append(" · 节点数：").Append(snapshot.Nodes.Count.ToString(CultureInfo.InvariantCulture))
+                .Append(" · 原始记录数：").Append(snapshot.RecordedInstructionCount.ToString(CultureInfo.InvariantCulture))
+                .Append("\n请求：").Append(LocalTime(snapshot.RequestedAtUtc))
+                .Append("\n采集：").Append(snapshot.CapturedAtUtc.HasValue
+                    ? LocalTime(snapshot.CapturedAtUtc.Value) : "尚未取得绘制记录");
+            if (snapshot.Status == QueryStatus.Pending)
+                text.Append("\n正在采集 IMGUI 绘制记录，最多等待 2 秒。");
+            if (snapshot.IsTruncated)
+                text.Append("\n已截断：节点数或深度上限省略了部分绘制记录。");
+            AppendDiagnostics(text, snapshot.Diagnostics);
             return text.ToString();
         }
 
@@ -191,12 +255,22 @@ namespace EditorLens
 
         internal static string RectText(Rect rect)
         {
+            return RectText(rect, "（含非有限数，布局可能尚未完成）");
+        }
+
+        internal static string IMGUIRectText(Rect rect)
+        {
+            return RectText(rect, "（绘制记录含非有限数）");
+        }
+
+        private static string RectText(Rect rect, string nonFiniteNotice)
+        {
             string text = "x=" + rect.x.ToString("R", CultureInfo.InvariantCulture)
                 + ", y=" + rect.y.ToString("R", CultureInfo.InvariantCulture)
                 + ", width=" + rect.width.ToString("R", CultureInfo.InvariantCulture)
                 + ", height=" + rect.height.ToString("R", CultureInfo.InvariantCulture);
             if (!IsFinite(rect.x) || !IsFinite(rect.y) || !IsFinite(rect.width) || !IsFinite(rect.height))
-                text += "（含非有限数，布局可能尚未完成）";
+                text += nonFiniteNotice;
             return text;
         }
 

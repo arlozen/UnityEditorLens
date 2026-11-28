@@ -7,7 +7,7 @@ using UnityEngine.UIElements;
 
 namespace EditorLens
 {
-    /// <summary>窗口及 UI Toolkit、Odin 树的只读快照查看器。</summary>
+    /// <summary>窗口及 UI Toolkit、Odin、IMGUI 树的只读快照查看器。</summary>
     public sealed class EditorLensWindow : EditorWindow
     {
         [NonSerialized] private EditorLensWindowState state;
@@ -25,8 +25,10 @@ namespace EditorLens
         private Label noWindows;
         private Label noTree;
         private Label cachedOnlyNotice;
+        private Label imguiNotice;
         private SnapshotDetailsView details;
         private bool updatingView;
+        private bool captureUpdateSubscribed;
 
         [MenuItem("Tools/Editor Lens/Analysis Window")]
         private static void Open()
@@ -60,8 +62,8 @@ namespace EditorLens
             var toolbar = new Toolbar();
             refreshWindowsButton = new ToolbarButton(RefreshWindows) { text = "刷新窗口列表", name = "refresh-windows" };
             refreshTreeButton = new ToolbarButton(RefreshTree) { text = "刷新控件树", name = "refresh-tree" };
-            sourceSelector = new DropdownField("树来源", new List<string> { "UI Toolkit", "Odin 属性树" },
-                state.Source == EditorLensTreeSource.Odin ? 1 : 0) { name = "tree-source" };
+            sourceSelector = new DropdownField("树来源", new List<string> { "UI Toolkit", "Odin 属性树", "IMGUI 绘制树" },
+                (int)state.Source) { name = "tree-source" };
             sourceSelector.RegisterValueChangedCallback(SourceChanged);
             toolbar.Add(refreshWindowsButton);
             toolbar.Add(refreshTreeButton);
@@ -133,6 +135,13 @@ namespace EditorLens
             };
             cachedOnlyNotice.style.whiteSpace = WhiteSpace.Normal;
             pane.Add(cachedOnlyNotice);
+            imguiNotice = new Label(SnapshotPresentation.IMGUIDrawingNotice)
+            {
+                name = "imgui-drawing-notice",
+                enableRichText = false
+            };
+            imguiNotice.style.whiteSpace = WhiteSpace.Normal;
+            pane.Add(imguiNotice);
             noTree = new Label { name = "tree-empty" };
             noTree.style.whiteSpace = WhiteSpace.Normal;
             pane.Add(noTree);
@@ -171,6 +180,12 @@ namespace EditorLens
                 label.text = SnapshotPresentation.OdinNodeRow(node);
                 label.tooltip = node.Path;
             }
+            else if (state.Source == EditorLensTreeSource.IMGUI)
+            {
+                IMGUIInstructionSnapshot node = tree.GetItemDataForIndex<IMGUIInstructionSnapshot>(index);
+                label.text = SnapshotPresentation.IMGUINodeRow(node);
+                label.tooltip = node.Text ?? node.Name ?? node.PropertyPath;
+            }
             else
             {
                 UIToolkitElementSnapshot node = tree.GetItemDataForIndex<UIToolkitElementSnapshot>(index);
@@ -183,7 +198,9 @@ namespace EditorLens
         {
             if (updatingView)
                 return;
-            state.SelectSource(change.newValue == "Odin 属性树" ? EditorLensTreeSource.Odin : EditorLensTreeSource.UIToolkit);
+            EditorLensTreeSource source = change.newValue == "IMGUI 绘制树" ? EditorLensTreeSource.IMGUI
+                : change.newValue == "Odin 属性树" ? EditorLensTreeSource.Odin : EditorLensTreeSource.UIToolkit;
+            state.SelectSource(source);
             RenderTree();
         }
 
@@ -222,6 +239,11 @@ namespace EditorLens
                 else if (item is OdinPropertySnapshot odinNode)
                 {
                     id = odinNode.NodeId;
+                    break;
+                }
+                else if (item is IMGUIInstructionSnapshot imguiNode)
+                {
+                    id = imguiNode.NodeId;
                     break;
                 }
             state.SelectNode(id);
@@ -274,22 +296,23 @@ namespace EditorLens
             {
                 tree.ClearSelection();
                 bool odin = state.Source == EditorLensTreeSource.Odin;
+                bool imgui = state.Source == EditorLensTreeSource.IMGUI;
                 if (odin)
                     tree.SetRootItems(SnapshotPresentation.BuildOdinTree(state.OdinTree));
+                else if (imgui)
+                    tree.SetRootItems(SnapshotPresentation.BuildIMGUITree(state.IMGUITree));
                 else
                     tree.SetRootItems(SnapshotPresentation.BuildTree(state.Tree));
                 tree.Rebuild();
                 tree.CollapseAll();
                 tree.ExpandRootItems();
                 treeStatus.text = odin ? SnapshotPresentation.OdinTreeStatus(state.OdinTree)
-                    : SnapshotPresentation.TreeStatus(state.Tree);
+                    : imgui ? SnapshotPresentation.IMGUITreeStatus(state.IMGUITree) : SnapshotPresentation.TreeStatus(state.Tree);
                 cachedOnlyNotice.style.display = odin ? DisplayStyle.Flex : DisplayStyle.None;
-                noTree.text = state.CurrentSnapshot == null
-                    ? (string.IsNullOrEmpty(state.SelectionNotice)
-                        ? (odin ? "请选择左侧窗口，采集其已有的 Odin 属性树。" : "请选择左侧窗口，采集其已有的 UI Toolkit 控件树。")
-                        : state.SelectionNotice)
-                    : "本次没有可展示的节点，请查看采集状态和诊断。";
-                int nodeCount = odin ? state.OdinTree?.Nodes.Count ?? 0 : state.Tree?.Nodes.Count ?? 0;
+                imguiNotice.style.display = imgui ? DisplayStyle.Flex : DisplayStyle.None;
+                noTree.text = TreeEmptyMessage();
+                int nodeCount = odin ? state.OdinTree?.Nodes.Count ?? 0
+                    : imgui ? state.IMGUITree?.Nodes.Count ?? 0 : state.Tree?.Nodes.Count ?? 0;
                 noTree.style.display = nodeCount == 0 ? DisplayStyle.Flex : DisplayStyle.None;
                 RenderTarget();
             }
@@ -297,6 +320,46 @@ namespace EditorLens
             {
                 updatingView = false;
             }
+            SyncIMGUICaptureUpdate();
+        }
+
+        private string TreeEmptyMessage()
+        {
+            if (state.IsIMGUICapturePending)
+                return "正在采集 IMGUI 绘制记录，最多等待 2 秒。";
+            if (state.CurrentSnapshot != null)
+                return "本次没有可展示的节点，请查看采集状态和诊断。";
+            if (!string.IsNullOrEmpty(state.SelectionNotice))
+                return state.SelectionNotice;
+            switch (state.Source)
+            {
+                case EditorLensTreeSource.Odin:
+                    return "请选择左侧窗口，采集其已有的 Odin 属性树。";
+                case EditorLensTreeSource.IMGUI:
+                    return "请选择左侧窗口，采集其一次 IMGUI 绘制记录。";
+                default:
+                    return "请选择左侧窗口，采集其已有的 UI Toolkit 控件树。";
+            }
+        }
+
+        private void SyncIMGUICaptureUpdate()
+        {
+            bool pending = state != null && state.IsIMGUICapturePending;
+            if (pending == captureUpdateSubscribed)
+                return;
+            if (pending)
+                EditorApplication.update += PollIMGUICapture;
+            else
+                EditorApplication.update -= PollIMGUICapture;
+            captureUpdateSubscribed = pending;
+        }
+
+        private void PollIMGUICapture()
+        {
+            if (state != null && state.UpdateIMGUICapture())
+                RenderTree();
+            else
+                SyncIMGUICaptureUpdate();
         }
 
         private void RenderTarget()
@@ -310,6 +373,8 @@ namespace EditorLens
         {
             if (state.Source == EditorLensTreeSource.Odin)
                 details.ShowOdin(state.Target, state.SelectedOdinNode, state.OdinTree);
+            else if (state.Source == EditorLensTreeSource.IMGUI)
+                details.ShowIMGUI(state.Target, state.SelectedIMGUINode);
             else
                 details.Show(state.Target, state.SelectedNode);
         }
@@ -341,6 +406,12 @@ namespace EditorLens
 
         private void ReleaseView()
         {
+            if (captureUpdateSubscribed)
+            {
+                EditorApplication.update -= PollIMGUICapture;
+                captureUpdateSubscribed = false;
+            }
+            state?.Dispose();
             if (refreshWindowsButton != null)
                 refreshWindowsButton.clicked -= RefreshWindows;
             if (refreshTreeButton != null)
@@ -369,6 +440,7 @@ namespace EditorLens
             noWindows = null;
             noTree = null;
             cachedOnlyNotice = null;
+            imguiNotice = null;
             updatingView = false;
             state = null;
         }
