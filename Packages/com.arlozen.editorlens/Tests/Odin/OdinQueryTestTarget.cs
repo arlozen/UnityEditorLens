@@ -12,14 +12,18 @@ namespace EditorLens.Odin.Tests
         public static int ButtonCalls;
         public static bool ThrowOnRead;
 
-        [BoxGroup("Numbers")]
+        [BoxGroup("Numbers"), LabelText("文本")]
         public int First = 3;
 
-        [BoxGroup("Numbers")]
+        [BoxGroup("Numbers"), LabelText("someValue", NicifyText = true)]
         public int Second = 5;
 
+        [HideLabel]
         public OdinQueryTestChild Nested = new OdinQueryTestChild();
+        [LabelText("$DynamicLabel")]
         public List<int> Items = new List<int> { 7, 9 };
+
+        private string DynamicLabel => GetDynamicLabel();
 
         [ShowInInspector, LabelText("@GetDynamicLabel()")]
         public int CountedValue
@@ -41,7 +45,7 @@ namespace EditorLens.Odin.Tests
             return "动态标签";
         }
 
-        [Button]
+        [Button("执行操作")]
         public void DoWork()
         {
             ButtonCalls++;

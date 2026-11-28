@@ -251,6 +251,12 @@ namespace EditorLens.Tests
             Assert.That(row, Does.Not.Contain(node.Path).And.Not.Contain(node.ValueTypeName));
             node.NiceName = null;
             Assert.That(SnapshotPresentation.OdinNodeRow(node), Does.Contain("internalName"));
+            node.DisplayName = "中文标签";
+            Assert.That(SnapshotPresentation.OdinNodeRow(node), Does.Contain("中文标签").And.Not.Contain("internalName"));
+            node.DisplayName = string.Empty;
+            Assert.That(SnapshotPresentation.OdinNodeRow(node), Does.Not.Contain("internalName"));
+            node.IsLabelHidden = true;
+            Assert.That(SnapshotPresentation.OdinNodeRow(node), Does.Contain("标签隐藏"));
         }
 
         [Test]

@@ -15,6 +15,12 @@ namespace EditorLens
         public IReadOnlyList<int> ChildIds { get; internal set; } = Array.Empty<int>();
         public string Name { get; internal set; }
         public string NiceName { get; internal set; }
+        /// <summary>本次采集时解析的标签；失败时回退为友好名称，空字符串是有效标签。</summary>
+        public string DisplayName { get; internal set; }
+        public string LabelSource { get; internal set; }
+        public string LabelExpression { get; internal set; }
+        public bool IsLabelHidden { get; internal set; }
+        public string LabelDiagnostic { get; internal set; }
         public string Path { get; internal set; }
         public OdinPropertyKind Kind { get; internal set; }
         public string ValueTypeName { get; internal set; }

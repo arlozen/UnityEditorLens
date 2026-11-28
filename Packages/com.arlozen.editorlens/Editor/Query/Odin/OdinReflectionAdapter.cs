@@ -6,7 +6,7 @@ using UnityEditor;
 
 namespace EditorLens
 {
-    /// <summary>隔离 Odin 4.0.2.4 缓存结构；仅缓存反射元数据，不调用 Odin getter 或方法。</summary>
+    /// <summary>隔离 Odin 4.0.2.4 缓存结构及标签求值入口。</summary>
     internal sealed class OdinReflectionAdapter
     {
         private const BindingFlags Fields = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly;
@@ -25,6 +25,10 @@ namespace EditorLens
         private readonly FieldInfo childrenByIndex;
         private readonly FieldInfo propertyName;
         private readonly FieldInfo propertyNiceName;
+        private readonly FieldInfo processedAttributes;
+        private readonly MethodInfo createLabelResolver;
+        private readonly MethodInfo getLabelValue;
+        private readonly PropertyInfo labelError;
         private readonly FieldInfo propertyPath;
         private readonly FieldInfo propertyInfo;
         private readonly FieldInfo infoKind;
@@ -60,6 +64,13 @@ namespace EditorLens
                 typeof(Dictionary<,>).MakeGenericType(typeof(int), propertyType));
             propertyName = BackingField(propertyType, "Name", typeof(string));
             propertyNiceName = BackingField(propertyType, "NiceName", typeof(string));
+            processedAttributes = RequiredField(propertyType, "processedAttributes", typeof(List<Attribute>));
+            Type resolverType = assembly.GetType("Sirenix.OdinInspector.Editor.ValueResolvers.ValueResolver", true);
+            createLabelResolver = resolverType.GetMethod("GetForString", new[] { propertyType, typeof(string) });
+            getLabelValue = resolverType.GetMethod("GetWeakValue", new[] { typeof(int) });
+            labelError = resolverType.GetProperty("ErrorMessage");
+            if (createLabelResolver == null || getLabelValue == null || labelError == null)
+                throw new NotSupportedException("Odin 标签解析入口不兼容。");
             propertyPath = BackingField(propertyType, "Path", typeof(string));
             propertyInfo = BackingField(propertyType, "Info", infoType);
             infoKind = BackingField(infoType, "PropertyType", kindType);
@@ -175,6 +186,70 @@ namespace EditorLens
                 : groupKind.Equals(kind) ? OdinPropertyKind.Group : OdinPropertyKind.Unknown;
             snapshot.ValueTypeName = ((Type)infoValueType.GetValue(info))?.FullName;
             snapshot.IsDataAvailable = true;
+        }
+
+        internal void ReadLabel(object property, OdinPropertySnapshot snapshot)
+        {
+            snapshot.DisplayName = snapshot.NiceName;
+            snapshot.LabelSource = "NiceName";
+            try
+            {
+                var attributes = (List<Attribute>)processedAttributes.GetValue(property);
+                Attribute label = null;
+                Attribute button = null;
+                foreach (Attribute attribute in attributes)
+                {
+                    string typeName = attribute.GetType().FullName;
+                    if (typeName == "Sirenix.OdinInspector.HideLabelAttribute")
+                        snapshot.IsLabelHidden = true;
+                    else if (typeName == "Sirenix.OdinInspector.LabelTextAttribute")
+                        label = attribute;
+                    else if (typeName == "Sirenix.OdinInspector.ButtonAttribute")
+                        button = attribute;
+                }
+                // 默认方法 Drawer 使用 Button.Name，而不是传入的 LabelText。
+                bool isButton = snapshot.Kind == OdinPropertyKind.Method;
+                Attribute source = isButton ? button : label;
+                string fieldName = isButton ? "Name" : "Text";
+                string text = source == null ? null : (string)source.GetType().GetField(fieldName).GetValue(source);
+                snapshot.LabelExpression = text;
+                if (snapshot.IsLabelHidden)
+                {
+                    snapshot.LabelSource = "HideLabel";
+                    snapshot.DisplayName = string.Empty;
+                    return;
+                }
+                if (text == null)
+                    return;
+                snapshot.LabelSource = isButton ? "Button.Name" : "LabelText";
+                if (isButton && text == string.Empty)
+                {
+                    snapshot.IsLabelHidden = true;
+                    snapshot.DisplayName = string.Empty;
+                    return;
+                }
+                string resolved = text;
+                if (text.StartsWith("$", StringComparison.Ordinal) || text.StartsWith("@", StringComparison.Ordinal))
+                {
+                    // 已有节点与根由采集器保证；不更新树、不初始化 Drawer，也不回写 Property.Label。
+                    object resolver = createLabelResolver.Invoke(null, new object[] { property, text });
+                    string error = (string)labelError.GetValue(resolver);
+                    if (error != null)
+                        throw new InvalidOperationException(error);
+                    resolved = (string)getLabelValue.Invoke(resolver, new object[] { 0 });
+                    error = (string)labelError.GetValue(resolver);
+                    if (error != null)
+                        throw new InvalidOperationException(error);
+                }
+                bool nicify = !isButton && (bool)source.GetType().GetField("NicifyText").GetValue(source);
+                snapshot.DisplayName = nicify ? ObjectNames.NicifyVariableName(resolved) : resolved ?? string.Empty;
+            }
+            catch (Exception exception)
+            {
+                while (exception is TargetInvocationException && exception.InnerException != null)
+                    exception = exception.InnerException;
+                snapshot.LabelDiagnostic = "标签解析失败：" + Describe(exception);
+            }
         }
 
         internal List<object> ReadCachedChildren(object property)

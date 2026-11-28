@@ -92,7 +92,7 @@ namespace EditorLens.Odin.Tests
         }
 
         [Test]
-        public void MetadataCaptureDoesNotEvaluateValuesLabelsResolversOrWindowTargets()
+        public void CaptureResolvesLabelsWithoutUpdatingTreeOrInvokingButtons()
         {
             var target = CreateTarget();
             var editor = CreateEditor(target);
@@ -107,7 +107,6 @@ namespace EditorLens.Odin.Tests
             var probe = OdinPropertyResolver.Create<OdinQueryProbeResolver>(root);
             ChildResolver.SetValue(root.Children, probe);
             OdinQueryTestTarget.ResetCounters();
-            OdinQueryTestTarget.ThrowOnRead = true;
             try
             {
                 OdinTreeSnapshot snapshot = EditorLensQuery.CaptureOdinTree(editor);
@@ -125,7 +124,13 @@ namespace EditorLens.Odin.Tests
                 Assert.That(tree.UpdateID, Is.EqualTo(updateBefore));
                 AssertCachesUnchanged(cacheBefore, root);
                 Assert.That(OdinQueryTestTarget.GetterCalls, Is.Zero);
-                Assert.That(OdinQueryTestTarget.LabelCalls, Is.Zero);
+                Assert.That(OdinQueryTestTarget.LabelCalls, Is.EqualTo(2));
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.First)).DisplayName, Is.EqualTo("文本"));
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.Second)).DisplayName, Is.EqualTo("Some Value"));
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.Items)).DisplayName, Is.EqualTo("动态标签"));
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.CountedValue)).DisplayName, Is.EqualTo("动态标签"));
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.Nested)).IsLabelHidden, Is.True);
+                Assert.That(snapshot.Nodes.Single(node => node.Name == nameof(OdinQueryTestTarget.DoWork)).DisplayName, Is.EqualTo("执行操作"));
                 Assert.That(OdinQueryTestTarget.ButtonCalls, Is.Zero);
                 Assert.That(OdinQueryProbeResolver.CountCalls, Is.Zero);
                 Assert.That(EditorWindow.focusedWindow, Is.SameAs(focusBefore));
@@ -137,6 +142,83 @@ namespace EditorLens.Odin.Tests
             {
                 ChildResolver.SetValue(root.Children, resolverBefore);
                 OdinQueryTestTarget.ThrowOnRead = false;
+            }
+        }
+
+        [Test]
+        public void LabelFailurePreservesMetadataAndOtherNodes()
+        {
+            var target = CreateTarget();
+            var editor = CreateEditor(target);
+            PropertyTree tree = CreateTree(target);
+            EditorTree.SetValue(editor, tree);
+            OdinQueryTestTarget.ThrowOnRead = true;
+
+            OdinTreeSnapshot snapshot = EditorLensQuery.CaptureOdinTree(editor);
+
+            Assert.That(snapshot.Status, Is.EqualTo(QueryStatus.Partial));
+            OdinPropertySnapshot node = snapshot.Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.CountedValue));
+            Assert.That(node.DisplayName, Is.EqualTo(node.NiceName));
+            Assert.That(node.IsDataAvailable, Is.True);
+            Assert.That(node.LabelDiagnostic, Does.Contain("标签解析失败"));
+            Assert.That(snapshot.Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.First)).DisplayName, Is.EqualTo("文本"));
+            Assert.That(OdinQueryTestTarget.ButtonCalls, Is.Zero);
+        }
+
+        [Test]
+        public void EmptyLabelIsPreservedAndInvalidExpressionReportsFailure()
+        {
+            var target = CreateTarget();
+            var editor = CreateEditor(target);
+            PropertyTree tree = CreateTree(target);
+            EditorTree.SetValue(editor, tree);
+            var property = CachedDepthFirst(tree.RootProperty).Single(item => item.Name == nameof(OdinQueryTestTarget.First));
+            var attribute = property.GetAttribute<Sirenix.OdinInspector.LabelTextAttribute>();
+            string originalText = attribute.Text;
+            try
+            {
+                attribute.Text = string.Empty;
+                var empty = EditorLensQuery.CaptureOdinTree(editor).Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.First));
+                Assert.That(empty.DisplayName, Is.EqualTo(string.Empty));
+                Assert.That(empty.LabelDiagnostic, Is.Null);
+
+                attribute.Text = "@MissingLabelMethod()";
+                var invalid = EditorLensQuery.CaptureOdinTree(editor).Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.First));
+                Assert.That(invalid.DisplayName, Is.EqualTo(invalid.NiceName));
+                Assert.That(invalid.LabelDiagnostic, Is.Not.Empty);
+            }
+            finally
+            {
+                attribute.Text = originalText;
+            }
+        }
+
+        [Test]
+        public void DynamicButtonNameDoesNotExecuteButtonAndEmptyNameHidesLabel()
+        {
+            var target = CreateTarget();
+            var editor = CreateEditor(target);
+            PropertyTree tree = CreateTree(target);
+            EditorTree.SetValue(editor, tree);
+            var property = CachedDepthFirst(tree.RootProperty).Single(item => item.Name == nameof(OdinQueryTestTarget.DoWork));
+            var attribute = property.GetAttribute<Sirenix.OdinInspector.ButtonAttribute>();
+            string originalName = attribute.Name;
+            try
+            {
+                attribute.Name = "@GetDynamicLabel()";
+                var dynamic = EditorLensQuery.CaptureOdinTree(editor).Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.DoWork));
+                Assert.That(dynamic.DisplayName, Is.EqualTo("动态标签"), dynamic.LabelDiagnostic);
+                Assert.That(OdinQueryTestTarget.ButtonCalls, Is.Zero);
+                attribute.Name = string.Empty;
+                var hidden = EditorLensQuery.CaptureOdinTree(editor).Nodes.Single(item => item.Name == nameof(OdinQueryTestTarget.DoWork));
+                Assert.That(hidden.DisplayName, Is.Empty);
+                Assert.That(hidden.IsLabelHidden, Is.True);
+                Assert.That(hidden.LabelSource, Is.EqualTo("Button.Name"));
+                Assert.That(hidden.LabelExpression, Is.Empty);
+            }
+            finally
+            {
+                attribute.Name = originalName;
             }
         }
 

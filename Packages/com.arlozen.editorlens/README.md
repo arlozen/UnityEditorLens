@@ -193,10 +193,10 @@ foreach (OdinPropertySnapshot node in snapshot.Nodes)
 - 窗口入口查询 OdinEditorWindow 已有的树／Editor 槽位，或所选 Inspector 已有 tracker 的 OdinEditor 列表；不把其他 Inspector 的 Editor 混入。已有 Inspector 列表没有 OdinEditor 时返回成功空结果并给出说明。
 - Editor 重载接受已有 OdinEditor 及其派生类；不创建 Editor。空参数、已销毁实例及普通 Editor 分别返回明确诊断。
 - `Trees` 保存树状态、根节点 ID 和 `Sources` 槽位元数据（槽位索引、Editor 实例 ID／类型、目标类型）。按树引用去重并保留所有来源，相同目标的不同树分别保留。
-- `Nodes` 以深度优先顺序保存快照内全局唯一 ID、树 ID、父子 ID、深度、原始名称、友好名称、Odin 路径、节点种类和声明类型；种类包括值、分组、方法及未知。类型等元数据不可用时保留节点与诊断。
+- `Nodes` 以深度优先顺序保存快照内全局唯一 ID、树 ID、父子 ID、深度、原始名称、友好名称、解析后的显示名称及标签来源／原文／隐藏状态／诊断、Odin 路径、节点种类和声明类型；种类包括值、分组、方法及未知。类型等元数据不可用时保留节点与诊断。
 - 默认总预算为 10,000 个节点、每棵既有根深度为 0，最大深度 128。所有唯一树共享节点预算，根计入预算；节点和树 ID 仅在本次快照中有效。
 
-**`CachedOnly` 始终为 true。** 查询从已有根和子节点字典读取已实例化的缓存，包括已建立但未绘制的节点；不保证业务树完整，缓存为空不证明没有潜在子节点。不创建、更新或绘制树，不调用 `Tree`、`RootProperty`、`Children.Count`、子节点索引器或常规遍历方法，不读取业务值、执行 getter、求解动态标签或计算可见／启用／展开状态。
+**`CachedOnly` 始终为 true。** 查询从已有根和子节点字典读取已实例化的缓存，包括已建立但未绘制的节点；不保证业务树完整，缓存为空不证明没有潜在子节点。采集器不主动创建、更新或绘制树；结构遍历不调用 `Tree`、`RootProperty`、`Children.Count`、子节点索引器或常规遍历方法。标签支持 LabelText（含 NicifyText）、Button.Name 和 HideLabel。每次采集在主线程对动态标签求值一次，允许执行其引用的业务 getter、方法和表达式，并读取 Odin 所需的现存值上下文；不主动更新属性值或计算可见／启用／展开状态。标签解析可能产生业务代码自身的副作用，结果表示采集时求得的文字，不保证等于上次绘制的画面。空字符串保留；失败时回退友好名称，保留节点元数据及标签诊断并报告 Partial。Name、NiceName 和目标 Property.Label 不被改写。CachedOnly 仅描述结构范围。
 
 `IsTruncated` 仅表示预算确实省略了缓存节点；`HasOmittedCachedChildren` 标记已知被省略的缓存子项，不表示未实例化分支的完整性。未初始化和已释放的树返回来源诊断，不当作成功空树或预算截断。多来源局部失败时保留其他可用结构并报告 `Partial`。UI Toolkit 树和 Odin 逻辑属性树独立，节点间没有物理控件对应关系。
 

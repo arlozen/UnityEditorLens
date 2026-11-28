@@ -9,7 +9,7 @@
 - 生产包不直接依赖 ET、Odin 或原开发宿主的 Assets、配置、脚本及技能；Odin 支持隔离为可选反射适配，缺失或不兼容时返回诊断。
 - 实现编辑器窗口信息、UI Toolkit 物理树及可选 Odin 已有属性缓存的只读查询，以及 UI Toolkit 调试窗口。
 - IMGUI API 使用显式、限时的记录会话，默认只等待自然绘制；显式启用 requestRepaint 时，在记录器启动后仅请求一次已有宿主 Repaint，不自动重试、不调用 OnGUI 或切换目标。两种模式都异步等待绘制记录，不保证 Unity 后台或最小化时完成。记录范围为整个宿主窗口，不承诺完整控件树或单个 Editor 的专属内容。隔离内部记录器依赖，遇到已知消费者不抢占，外部接管后不全局停止他人的会话。
-- Odin 查询只遍历已实例化缓存，明确标记 CachedOnly；不通过 Tree、Children.Count 或遍历 API 初始化节点，不执行业务 getter、resolver 或绘制，不将逻辑属性节点当作 IMGUI 物理控件。
+- Odin 查询只遍历已实例化缓存，明确标记 CachedOnly；不通过 Tree、Children.Count 或遍历 API 初始化节点，允许为 LabelText 和 Button.Name 执行标签 resolver 及其引用的业务 getter、方法和表达式；不主动更新树或执行绘制，不将逻辑属性节点当作 IMGUI 物理控件。
 - 查询逻辑独立于调试窗口；Unity 对象和元素树只在 Unity 主线程访问。
 - 查询不改变目标窗口焦点、标签、Selection 或控件状态。
 - 返回结果明确快照和节点标识的有效期，不伪造未实例化或不支持解析的内容。

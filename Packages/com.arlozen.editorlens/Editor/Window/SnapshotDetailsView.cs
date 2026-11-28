@@ -68,7 +68,12 @@ namespace EditorLens
             Field(nodeFields, "父节点 ID", node.ParentId?.ToString(CultureInfo.InvariantCulture) ?? "根节点");
             Field(nodeFields, "深度", node.Depth.ToString(CultureInfo.InvariantCulture));
             Field(nodeFields, "名称", node.Name);
-            Field(nodeFields, "显示名称", node.NiceName);
+            Field(nodeFields, "友好名称", node.NiceName);
+            Field(nodeFields, "显示名称", node.DisplayName);
+            Field(nodeFields, "标签来源", node.LabelSource);
+            Field(nodeFields, "标签原文", node.LabelExpression);
+            Field(nodeFields, "标签隐藏", node.IsLabelHidden.ToString());
+            Field(nodeFields, "标签诊断", node.LabelDiagnostic);
             Field(nodeFields, "属性路径", node.Path);
             Field(nodeFields, "属性种类", node.Kind.ToString());
             Field(nodeFields, "声明值类型", node.ValueTypeName);

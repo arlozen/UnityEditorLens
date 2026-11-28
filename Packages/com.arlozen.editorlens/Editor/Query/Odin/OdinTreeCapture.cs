@@ -298,6 +298,9 @@ namespace EditorLens
                 try
                 {
                     adapter.ReadMetadata(property, node);
+                    adapter.ReadLabel(property, node);
+                    if (node.LabelDiagnostic != null)
+                        RecordError(node, node.LabelDiagnostic);
                 }
                 catch (Exception exception)
                 {

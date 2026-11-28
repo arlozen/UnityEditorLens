@@ -11,7 +11,7 @@ namespace EditorLens
     internal static class SnapshotPresentation
     {
         internal const string OdinCachedOnlyNotice =
-            "CachedOnly：仅遍历已缓存的 Odin 属性，完整性未知；不初始化未缓存子项。属性树是逻辑结构，不代表 IMGUI 实际控件或可见布局，不读取属性值。";
+            "CachedOnly：仅遍历已缓存的 Odin 属性，完整性未知；不初始化未缓存子项。属性树是逻辑结构，不代表 IMGUI 实际控件或可见布局；标签求值允许执行业务 getter、方法或表达式。";
 
         internal const string IMGUIDrawingNotice =
             "IMGUI 绘制树是整个宿主一次绘制的历史记录，非完整持久控件树；层级来自绘制指令缩进，节点 ID 仅在本次快照内有效。";
@@ -93,9 +93,13 @@ namespace EditorLens
                 return "节点数据不可用";
 
             var text = new StringBuilder(node.Kind.ToString());
-            string title = string.IsNullOrEmpty(node.NiceName) ? node.Name : node.NiceName;
+            string title = node.IsLabelHidden ? node.NiceName : node.DisplayName ?? node.NiceName;
+            if (title == null)
+                title = node.Name;
             if (!string.IsNullOrEmpty(title))
                 text.Append("  ").Append(SingleLine(title));
+            if (node.IsLabelHidden)
+                text.Append("  [标签隐藏]");
             if (node.HasOmittedCachedChildren)
                 text.Append("  [缓存子项已省略]");
             if (!node.IsDataAvailable)
