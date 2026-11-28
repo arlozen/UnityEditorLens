@@ -59,6 +59,25 @@ UnityEditorLens/
 
 完整安装说明见[包内 README](Packages/com.arlozen.editorlens/README.md)。查询 API 不依赖调试窗口或本开发宿主资源。
 
+## 分析用样例
+
+开发宿主的 `Assets/Scripts` 提供三组对照样例，每组包含 MonoBehaviour、自定义 Inspector 和独立 EditorWindow。这些脚本不属于分发包；Odin 组直接使用宿主已安装的 Odin，另外两组不引用 Sirenix。
+
+| 组别 | Add Component 菜单 | 窗口菜单 |
+| --- | --- | --- |
+| IMGUI | `Editor Lens Samples/IMGUI Analysis Sample` | `Tools/Editor Lens/Samples/IMGUI` |
+| Odin | `Editor Lens Samples/Odin Analysis Sample` | `Tools/Editor Lens/Samples/Odin` |
+| UI Toolkit | `Editor Lens Samples/UI Toolkit Analysis Sample` | `Tools/Editor Lens/Samples/UI Toolkit` |
+
+三组使用相近的中文标签与默认数据，覆盖文本、数值、开关、枚举、向量、颜色、对象引用、嵌套对象和三项列表，并提供折叠、条件显示、只读区域、Tooltip、点击计数与恢复默认值。窗口使用自身数据，不需要场景组件或当前 Selection；脚本不会自动创建对象、场景或预制体。
+
+1. 创建或选择一个 GameObject，从 Add Component 菜单添加相应组件，在 Inspector 中查看自定义界面；也可直接打开对应的样例窗口。
+2. 打开 `Tools/Editor Lens/Analysis Window`，刷新窗口列表，选择样例窗口或展示组件的 Inspector。
+3. 为 IMGUI 样例选择“IMGUI 绘制树”，为 Odin 样例选择“Odin 属性树”，为 UI Toolkit 样例选择“UI Toolkit”；手动刷新控件树。
+4. 展开折叠组、修改列表、切换“显示高级内容”、点击按钮或滚动后，再刷新控件树，对照快照变化。组件字段和按钮操作可用 Undo／Redo 撤销和重做。
+
+IMGUI 采集范围是整个宿主的一次绘制，Inspector 中可能包含组件标题和其他组件；隐藏或后台窗口可能无法及时绘制，缓存的 `IMGUIContainer` 也可能省略本次未重绘的正文。Odin 只返回已经实例化的属性缓存，不读取业务值或计算可见状态；先展开、滚动让 Odin 正常绘制后再采集，已缓存节点在折叠后也可能保留。UI Toolkit 显示当前实际创建的元素；查看 IMGUI 或 Odin 界面时，此来源通常只能看到 `IMGUIContainer` 边界。Odin 界面也可切换到“IMGUI 绘制树”，比较属性结构与绘制记录。
+
 ## 开发与验证
 
 使用匹配版本的 Unity 打开仓库根目录。插件代码维护在包的 Editor 目录；查询服务和调试窗口共享能力，但查询服务不依赖窗口打开。
